@@ -865,10 +865,9 @@ def check(go_path, rust_path, report_path=None):
 
         # Every check the matrix cites as evidence has to have been recorded.
         recorded = {c['id'] for c in report.get('checks', [])}
-        if recorded:
-            missing = sorted(set(want['checks']) - recorded)
-            if missing:
-                problems.append(f'the matrix cites checks the run did not record: {missing}')
+        missing = sorted(set(want['checks']) - recorded)
+        if missing:
+            problems.append(f'the matrix cites checks the run did not record: {missing}')
 
     stats = {
         'go_symbols': len(go_syms),

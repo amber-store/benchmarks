@@ -913,6 +913,20 @@ pub fn cases(env: &Env) -> Vec<Case> {
         })
         .per_rep(Box::new(free_store_handle)),
     );
+    // Physical segment layout can differ between independently built fixtures.
+    // Semantic correctness is checked separately for each pass.
+    for case in &mut out {
+        if matches!(
+            case.op.as_str(),
+            "packstore.has_outside"
+                | "packstore.liveness"
+                | "packstore.record"
+                | "packstore.scan_index"
+                | "packstore.sort_by_location"
+        ) {
+            case.unstable = true;
+        }
+    }
     out
 }
 

@@ -281,9 +281,15 @@ rust_sha=$(sha256sum "$rust_driver" | cut -d' ' -f1)
 # A digest of the benchmark's own sources, taken before and after the run, so
 # a report can state that nothing was edited while it was being measured.
 sources_digest() {
-  find "$here" -type f \( -name '*.go' -o -name '*.rs' -o -name '*.sh' -o -name '*.py' \
-       -o -name 'go.mod' -o -name 'go.sum' -o -name 'Cargo.toml' -o -name 'Cargo.lock' \) \
-    -not -path '*/target/*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1
+  (
+    cd "$root"
+    {
+      find core-ops -type f \( -name '*.go' -o -name '*.rs' -o -name '*.sh' -o -name '*.py' \
+           -o -name 'go.mod' -o -name 'go.sum' -o -name 'Cargo.toml' -o -name 'Cargo.lock' \) \
+        -not -path '*/target/*' -print0
+      printf '%s\0' run.sh flake.nix flake.lock python/amber_bench_plot.py
+    } | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1
+  )
 }
 sources_before=$(sources_digest)
 

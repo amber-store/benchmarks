@@ -296,6 +296,14 @@ func gcCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 	)
+	// Physical segment layout can differ between independently built fixtures.
+	// Semantic correctness is checked separately for each pass.
+	for i := range out {
+		switch out[i].Op {
+		case "gc.run":
+			out[i].Unstable = true
+		}
+	}
 	return out
 }
 

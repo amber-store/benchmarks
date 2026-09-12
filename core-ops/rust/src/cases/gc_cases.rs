@@ -353,6 +353,13 @@ pub fn cases(env: &Env) -> Vec<Case> {
         .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
+    // Physical segment layout can differ between independently built fixtures.
+    // Semantic correctness is checked separately for each pass.
+    for case in &mut out {
+        if matches!(case.op.as_str(), "gc.run") {
+            case.unstable = true;
+        }
+    }
     out
 }
 

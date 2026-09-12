@@ -619,7 +619,7 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
                 let mut acc = new_fold();
                 for tmp in &is.tmps {
                     ib.discard(tmp);
-                    acc = fold_str(acc, &tmp.to_string_lossy());
+                    acc = fold_u64(acc, 1);
                 }
                 acc
             }),

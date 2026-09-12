@@ -65,9 +65,34 @@ def merge_passes(docs, core):
         if doc.get('core') != core:
             raise Invalid(f'{core} pass {i} declares core {doc.get("core")!r}')
         for field in ('config', 'identity', 'environment'):
-            if doc.get(field) != head.get(field):
+            actual, expected = doc.get(field), head.get(field)
+            if field == 'environment':
+                # Each pass owns a fresh scratch directory on the same filesystem.
+                actual = {k: v for k, v in (actual or {}).items() if k != 'scratch'}
+                expected = {k: v for k, v in (expected or {}).items() if k != 'scratch'}
+            if actual != expected:
                 raise Invalid(f'{core} pass {i} disagrees with pass 0 on {field}')
-        for field in ('checks', 'unsupported', 'encodings', 'wire_inputs'):
+        def check_facts(document):
+            # Local diagnostic counts can vary with segment layout. Every pass
+            # must still pass the same checks and match comparable digests.
+            checks = document.get('checks') or []
+            if not checks:
+                raise Invalid(f'the {core} run recorded no correctness checks at all')
+            facts = {}
+            for check in checks:
+                if not check.get('passed'):
+                    raise Invalid(f'{core} run has failing checks: {check["id"]}')
+                if check['id'] in facts:
+                    raise Invalid(f'{core} recorded check id {check["id"]} more than once')
+                facts[check['id']] = {
+                    k: v for k, v in check.items()
+                    if k != 'digest' or check.get('comparable')
+                }
+            return facts
+
+        if check_facts(doc) != check_facts(head):
+            raise Invalid(f'{core} pass {i} disagrees with pass 0 on checks')
+        for field in ('unsupported', 'encodings', 'wire_inputs'):
             if doc.get(field) != head.get(field):
                 raise Invalid(f'{core} pass {i} disagrees with pass 0 on {field}')
 
@@ -87,6 +112,7 @@ def merge_passes(docs, core):
     merged['counters'] = [c for doc in docs for c in doc['counters']]
     merged['blackhole'] = sum(doc['blackhole'] for doc in docs)
     merged['passes'] = len(docs)
+    merged['checks_by_pass'] = [doc['checks'] for doc in docs]
     return merged
 
 

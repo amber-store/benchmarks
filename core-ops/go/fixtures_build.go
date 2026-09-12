@@ -52,8 +52,12 @@ func (ps payloadSet) limit(max int64) payloadSet {
 		return ps
 	}
 	n := int(max / ps.ItemBytes)
-	if n < 1 {
-		n = 1
+	minimum := 1
+	if ps.Content == "duplicate" {
+		minimum = 2
+	}
+	if n < minimum {
+		n = minimum
 	}
 	if n > len(ps.Items) {
 		n = len(ps.Items)
@@ -138,8 +142,12 @@ func buildPayloadMatrix(p Profile) []payloadSet {
 			items = 16384
 		}
 		for j, content := range payloadContents {
+			count := items
+			if content == "duplicate" && count < 2 {
+				count = 2
+			}
 			seed := p.Seed + 10 + uint64(i)*97 + uint64(j)*7919
-			out = append(out, newPayloadSet(sz.Name+"-"+content, content, items, sz.Bytes, seed))
+			out = append(out, newPayloadSet(sz.Name+"-"+content, content, count, sz.Bytes, seed))
 		}
 	}
 	return out

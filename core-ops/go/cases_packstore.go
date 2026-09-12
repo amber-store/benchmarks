@@ -651,6 +651,14 @@ func packstoreCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 		},
 	)
+	// Physical segment layout can differ between independently built fixtures.
+	// Semantic correctness is checked separately for each pass.
+	for i := range out {
+		switch out[i].Op {
+		case "packstore.has_outside", "packstore.liveness", "packstore.record", "packstore.scan_index", "packstore.sort_by_location":
+			out[i].Unstable = true
+		}
+	}
 	return out
 }
 

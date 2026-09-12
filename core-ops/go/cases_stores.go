@@ -467,7 +467,7 @@ func inboxCases(e *Env) []Case {
 				acc := newFold()
 				for _, tmp := range is.tmps {
 					is.ib.Discard(tmp)
-					acc = foldStr(acc, tmp)
+					acc = foldU64(acc, 1)
 				}
 				return acc
 			},

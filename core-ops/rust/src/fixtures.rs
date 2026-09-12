@@ -457,7 +457,10 @@ impl PayloadSet {
         if self.bytes <= max || self.item_bytes == 0 {
             return self.clone();
         }
-        let n = ((max / self.item_bytes) as usize).clamp(1, self.items.len());
+        let minimum = if self.content == "duplicate" { 2 } else { 1 };
+        let n = ((max / self.item_bytes) as usize)
+            .max(minimum)
+            .min(self.items.len());
         PayloadSet {
             name: self.name.clone(),
             items: self.items[..n].to_vec(),
@@ -546,6 +549,11 @@ pub fn build_payload_matrix(p: &Profile) -> Vec<PayloadSet> {
         }
         let items = ((p.payload_total / *size as i64) as usize).clamp(1, 16384);
         for (j, content) in PAYLOAD_CONTENTS.iter().enumerate() {
+            let items = if *content == "duplicate" {
+                items.max(2)
+            } else {
+                items
+            };
             let seed = p.seed + 10 + (i as u64) * 97 + (j as u64) * 7919;
             out.push(new_payload_set(
                 &format!("{name}-{content}"),

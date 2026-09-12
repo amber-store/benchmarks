@@ -510,6 +510,27 @@ class TestValidity(unittest.TestCase):
         ok = check(go=m)
         self.assertTrue(any('opposite core order' in s for s in ok))
 
+    def test_pass_scratch_and_local_diagnostics_can_differ(self):
+        a = doc('go', samples=[sample(rep=0)])
+        b = doc('go', samples=[sample(rep=1)])
+        a['environment']['scratch'] = '/scratch/pass1'
+        b['environment']['scratch'] = '/scratch/pass2'
+        for d, value in ((a, 'segments=5'), (b, 'segments=6')):
+            d['checks'].append({'id': 'local', 'passed': True,
+                                'comparable': False, 'digest': value})
+        merged = validation.merge_passes([a, b], 'go')
+        self.assertEqual(len(merged['checks_by_pass']), 2)
+        b['checks'][-1]['passed'] = False
+        with self.assertRaisesRegex(Invalid, 'failing checks'):
+            validation.merge_passes([a, b], 'go')
+
+    def test_comparable_digest_must_match_across_passes(self):
+        a = doc('go', samples=[sample(rep=0)])
+        b = doc('go', samples=[sample(rep=1)])
+        b['checks'][0]['digest'] = 'changed'
+        with self.assertRaisesRegex(Invalid, 'disagrees with pass 0 on checks'):
+            validation.merge_passes([a, b], 'go')
+
     # -- the coverage manifest --------------------------------------------
 
     def test_a_manifest_workload_that_was_not_measured_is_refused(self):
