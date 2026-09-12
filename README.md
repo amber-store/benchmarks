@@ -546,7 +546,7 @@ are pinned by this flake:
 ```
 nix develop --command jupyter lab results/explore.ipynb
 # or, headless, against one recorded run:
-AMBER_BENCH_RUN=20260912T183000Z-standard \
+AMBER_BENCH_RUN=20260912T194132Z-standard \
   nix develop --command jupyter nbconvert --to notebook --execute \
     --output /tmp/executed.ipynb results/explore.ipynb
 ```
