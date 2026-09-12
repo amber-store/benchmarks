@@ -104,6 +104,8 @@ pub fn cases(env: &Env) -> Vec<Case> {
             item_bytes: es.enc.len() as i64,
             content: es.content.clone(),
             shape: "leaf".into(),
+            sweep: "entries".into(),
+            series: es.series.clone(),
             ..Default::default()
         };
         out.push(
@@ -168,6 +170,8 @@ pub fn cases(env: &Env) -> Vec<Case> {
             item_bytes: ps.enc.len() as i64,
             content: "structured".into(),
             shape: "index".into(),
+            sweep: "entries".into(),
+            series: "plain".into(),
             ..Default::default()
         };
         out.push(
@@ -227,6 +231,8 @@ pub fn cases(env: &Env) -> Vec<Case> {
             item_bytes: cs.enc.len() as i64,
             content: "structured".into(),
             shape: "file-index".into(),
+            sweep: "entries".into(),
+            series: "plain".into(),
             ..Default::default()
         };
         out.push(
@@ -384,6 +390,8 @@ pub fn cases(env: &Env) -> Vec<Case> {
                 depth: 1,
                 shape: "wide".into(),
                 content: "structured".into(),
+                sweep: "entries".into(),
+                series: "plain".into(),
                 ..Default::default()
             })
             .cross(),
@@ -418,6 +426,8 @@ pub fn cases(env: &Env) -> Vec<Case> {
                 width: n as i64,
                 shape: "file-index".into(),
                 content: "structured".into(),
+                sweep: "entries".into(),
+                series: "plain".into(),
                 ..Default::default()
             })
             .cross(),
@@ -427,13 +437,15 @@ pub fn cases(env: &Env) -> Vec<Case> {
     // --- read paths: the directory-width sweep --------------------------
     let lookups = env.profile.batch_ops;
     for (di, d) in fx.dirs.iter().enumerate() {
-        let wdims = Dims {
+        let wdims = |series: &str| Dims {
             entries: d.entries as i64,
             width: d.entries as i64,
             depth: 1,
             objects: d.objects,
             shape: "wide".into(),
             content: "structured".into(),
+            sweep: "width".into(),
+            series: series.into(),
             ..Default::default()
         };
         out.push(
@@ -460,7 +472,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     acc
                 }),
             )
-            .dims(wdims.clone())
+            .dims(wdims("hit"))
             .cross(),
         );
         out.push(
@@ -482,7 +494,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     acc
                 }),
             )
-            .dims(wdims.clone())
+            .dims(wdims("miss"))
             .cross(),
         );
         out.push(
@@ -505,7 +517,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     acc
                 }),
             )
-            .dims(wdims.clone())
+            .dims(wdims("plain"))
             .cross(),
         );
         out.push(
@@ -534,7 +546,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     acc
                 }),
             )
-            .dims(wdims.clone())
+            .dims(wdims("plain"))
             .cross(),
         );
         out.push(
@@ -552,7 +564,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     fold_u64(new_fold(), ks.len() as u64)
                 }),
             )
-            .dims(wdims.clone())
+            .dims(wdims("plain"))
             .cross(),
         );
     }
@@ -599,6 +611,8 @@ pub fn cases(env: &Env) -> Vec<Case> {
             items: 256,
             shape: "deep".into(),
             content: "structured".into(),
+            sweep: "depth".into(),
+            series: "plain".into(),
             ..Default::default()
         };
         out.push(
@@ -786,6 +800,8 @@ pub fn cases(env: &Env) -> Vec<Case> {
                 objects: d.objects,
                 shape: "wide".into(),
                 content: "structured".into(),
+                sweep: "width".into(),
+                series: "plain".into(),
                 ..Default::default()
             })
             .cross(),

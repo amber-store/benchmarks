@@ -14,7 +14,7 @@ use crate::fixtures::{
     digest, digest_strings, fold_bool, fold_bytes, fold_i64, fold_key, fold_str, key_bytes,
     new_fold, sink_bytes,
 };
-use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
+use crate::harness::{Case, Dims, Recorder, State};
 use crate::stores::{
     RefHandle, StoreHandle, copied_dir, copied_refs, fresh_refs, fresh_store, work_dir,
 };

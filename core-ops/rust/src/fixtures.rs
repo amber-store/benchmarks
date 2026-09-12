@@ -435,12 +435,17 @@ pub struct PayloadSet {
 }
 
 impl PayloadSet {
-    /// The set as workload dimensions.
+    /// The set as workload dimensions. Every point of the grid belongs to
+    /// the object-size sweep, in the series named by its content kind; the
+    /// empty object is its own series, because a zero-length object has no
+    /// content and so belongs to no content curve.
     pub fn dims(&self) -> Dims {
         Dims {
             item_bytes: self.item_bytes,
             items: self.items.len() as i64,
             content: self.content.clone(),
+            sweep: "item_bytes".into(),
+            series: self.content.clone(),
             ..Default::default()
         }
     }
@@ -603,11 +608,13 @@ pub struct MemChain {
     pub path: String,
 }
 
-/// One point of the file-index fan-out sweep.
+/// One point of the file-index fan-out sweep. The builder cases construct
+/// their own indexes inside the measured interval, so these are kept only so
+/// the fixture digests cover the same objects in both cores.
+#[allow(dead_code)]
 pub struct MemFileIndex {
     pub children: usize,
     pub root: Key,
-    #[allow(dead_code)]
     pub keys: Vec<Key>,
 }
 
@@ -615,6 +622,10 @@ pub struct MemFileIndex {
 pub struct EntrySet {
     pub name: String,
     pub content: String,
+    /// The scaling family this point belongs to. The plain sets form the
+    /// entry-count curve; the with-xattrs and partial-change variants are
+    /// single points at a fixed count and so are their own series.
+    pub series: String,
     pub entries: Vec<Entry>,
     pub enc: Vec<u8>,
 }
@@ -693,10 +704,13 @@ pub struct Fixtures {
     pub entry_sets: Vec<EntrySet>,
     pub pair_sets: Vec<PairSet>,
     pub child_sets: Vec<ChildSet>,
+    #[allow(dead_code)]
     pub entries_small: Vec<Entry>,
     pub entries_large: Vec<Entry>,
+    #[allow(dead_code)]
     pub pairs_small: Vec<fstree::DirPair>,
     pub pairs_large: Vec<fstree::DirPair>,
+    #[allow(dead_code)]
     pub children_small: Vec<Key>,
     pub children_large: Vec<Key>,
     pub enc_dir_leaf_small: Vec<u8>,
@@ -735,6 +749,7 @@ pub struct Fixtures {
     /// What the fixture writer laid down, ignored files included. It sizes
     /// the fixture; it is *not* a rate denominator, because ingest does not
     /// include all of it.
+    #[allow(dead_code)]
     pub tree_bytes: i64,
     #[allow(dead_code)]
     pub tree_files: i64,

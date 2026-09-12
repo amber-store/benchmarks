@@ -50,8 +50,9 @@ ROWS = [
        '4KiB-text', 'empty', 'large-8MiB-duplicate', 'large-8MiB-random',
        'large-8MiB-text', 'tiny-64B-duplicate', 'tiny-64B-random', 'tiny-64B-text'],
       ['key/new-small'],
-      'BLAKE3 over the payload plus header assembly; five payload sizes and '
-      'both compressibilities, since the hash dominates at size.'),
+      'BLAKE3 over the payload plus header assembly, swept over the whole '
+      '(size, content) grid: the header cost is constant and the hash cost '
+      'is proportional, and the scaling plot shows where they cross.'),
     R('key.new_from_hash', MEASURED, ['key.NewFromHash'], ['key::Key::new_from_hash'],
       ['batch'], ['key/new-from-hash'],
       'Header assembly alone, with the digest precomputed.'),
@@ -73,14 +74,15 @@ ROWS = [
     R('key.string', MEASURED, ['key.Key.String'], ['key::Key::<Display>', 'key::Key::<Debug>'],
       ['hex'], ['key/parse-roundtrip'],
       'Lowercase hex rendering. Rust spells it as a `Display` impl, which the '
-      'extractor does not list as a free symbol.'),
+      'extractor lists as `key::Key::<Display>`; the `Debug` impl beside it '
+      'is the same rendering.'),
     R('key.type_string', MEASURED,
       ['key.Type.String', 'key.Type.IsValid'],
       ['key::Type::is_valid', 'key::Type::from_u8'],
       ['names'], ['key/type-names'],
       'Type-name rendering and validity. Rust\'s `from_u8` is the checked '
       'conversion Go performs inside `Type.IsValid`; Rust\'s name rendering '
-      'is a `Display` impl.'),
+      'is the `key::Type::<Display>` impl listed on the type row.'),
     R('key.Key / key.Type', TYPE, ['key.Key', 'key.Type'], ['key::Key', 'key::Type', 'key::Type::<Display>'],
       note='Value types. Every operation above constructs or reads one.'),
     R('key sizes and type tags', CONST,
@@ -234,7 +236,8 @@ ROWS = [
       ['width-16/hit', 'width-16/miss', 'width-256/hit', 'width-256/miss',
        'width-40000/hit', 'width-40000/miss', 'width-4096/hit', 'width-4096/miss'],
       ['fstree/lookup-hit', 'fstree/lookup-miss'],
-      'Hit and miss, over a wide prolly tree and a single-leaf one.'),
+      'Hit and miss, swept over the directory-width dimension: a single '
+      'leaf, and prolly trees with one, two and three index levels.'),
     R('fstree.list_entries', MEASURED, ['fstree.ListEntries'], ['fstree::list_entries'],
       ['widest/first-page-100', 'width-16/full-paging-100', 'width-256/full-paging-100',
        'width-40000/full-paging-100', 'width-4096/full-paging-100'], ['fstree/list-paging'],
@@ -327,7 +330,7 @@ ROWS = [
       ['single-file/jobs-1', 'tree/fresh-store/jobs-1', 'tree/fresh-store/jobs-N',
        'tree/incremental-change/jobs-1', 'tree/incremental-change/jobs-N',
        'tree/unchanged-repeat/jobs-1', 'tree/unchanged-repeat/jobs-N'],
-      ['ingest/dir-root', 'ingest/dir-dedups', 'ingest/dir-incremental'],
+      ['ingest/dir-root', 'ingest/dir-unchanged-repeat-stores-nothing', 'ingest/dir-incremental'],
       'Fresh store, a re-ingest after a deterministic incremental change, '
       'and a single regular file.'),
     R('ingest option types', TYPE,
@@ -370,19 +373,19 @@ ROWS = [
       ['mixed-objects'], ['amberpack/empty-pack'], ''),
     R('amberpack.writer_add_record', MEASURED,
       ['amberpack.Writer.AddRecord'], ['amberpack::Writer::add_record'],
-      ['pre-encoded-records/producer-go', 'pre-encoded-records/producer-rust'], ['amberpack/record-passthrough'],
+      ['pre-encoded-records/producer-go', 'pre-encoded-records/producer-rust'], ['amberpack/record-passthrough-go', 'amberpack/record-passthrough-rust'],
       'The zero-copy push path: pre-encoded records appended verbatim.'),
     R('amberpack.reader_all', MEASURED,
       ['amberpack.NewReader', 'amberpack.Reader.All'],
       ['amberpack::Reader::new', 'amberpack::Reader::<Iterator>'],
       ['mixed-objects/producer-go', 'mixed-objects/producer-rust',
        'truncated-stream/producer-go', 'truncated-stream/producer-rust'],
-      ['amberpack/reader-roundtrip', 'amberpack/rejects-truncated',
+      ['amberpack/reads-go-pack', 'amberpack/reads-rust-pack', 'amberpack/rejects-truncated',
        'amberpack/rejects-legacy-magic'],
       'Rust spells `All` as the `Reader`\'s own `Iterator` impl.'),
     R('amberpack.reader_records', MEASURED,
       ['amberpack.Reader.Records'], ['amberpack::Reader::records'],
-      ['mixed-objects/producer-go', 'mixed-objects/producer-rust'], ['amberpack/record-passthrough'], ''),
+      ['mixed-objects/producer-go', 'mixed-objects/producer-rust'], ['amberpack/record-passthrough-go', 'amberpack/record-passthrough-rust'], ''),
     R('amberpack record and stream types', TYPE,
       ['amberpack.Reader', 'amberpack.Writer', 'amberpack.Record', 'amberpack.RawRecord'],
       ['amberpack::Reader', 'amberpack::Writer', 'amberpack::Record',
@@ -480,7 +483,7 @@ ROWS = [
       ['packstore/liveness-accounts-all'], ''),
     R('packstore.compact', MEASURED, ['packstore.Store.Compact'],
       ['packstore::Store::compact'], ['90-percent-dead', 'nothing-dead'],
-      ['packstore/compact-retains-live', 'packstore/compact-reclaims',
+      ['packstore/compact-retains-live-content', 'packstore/compact-drops-dead', 'packstore/compact-reclaims',
        'packstore/verify-after-compact'],
       'Run on an isolated copy of a store whose sealed segments are 90 % '
       'dead, so there is real reclamation, and the retained objects are '
@@ -726,7 +729,7 @@ ROWS = [
       'the check compares the whole archive digest.'),
     R('tarextract.extract', MEASURED, ['tarextract.Extract'], ['tarextract::extract'],
       ['fixture-tree'],
-      ['tar/extract-manifest', 'tar/extract-content-matches-source',
+      ['tar/extract-manifest', 'tar/extract-is-the-included-source-tree',
        'tar/extract-symlink', 'tar/extract-honours-ingest-filter'],
       'The extracted tree\'s canonical manifest — type, permissions, size, '
       'mtime, content digest, symlink target — is compared across cores.'),
@@ -910,13 +913,37 @@ def render(stats, go_path, rust_path):
     add(f'* Operations one core exports and the other does not: '
         f'**{stats["go_only_operations"]} Go-only, {stats["rust_only_operations"]} Rust-only**')
     add(f'* Grouped accessor/configuration rows: **{stats["grouped"]}**')
+    add(f'* Workloads the operations are measured at: **{stats["workloads"]}**')
+    add(f'* Distinct correctness checks cited as evidence: **{stats["checks_cited"]}**')
     add(f'* Data types: **{stats["types"]}**; constants: **{stats["constants"]}**; '
         f'error values: **{stats["errors"]}**')
     add('')
-    add('`core-ops/coverage/matrix.py check` proves the mapping is total: every')
-    add('extracted symbol appears in exactly one row, no row names a symbol that')
-    add('does not exist, and — given a report — every operation this file calls')
-    add('measured really produced samples. CI runs it.')
+    add('`core-ops/coverage/matrix.py check` proves four things, and CI runs it:')
+    add('')
+    add('1. every extracted symbol appears in exactly one row, and no row names a')
+    add('   symbol that does not exist — including the trait implementations and')
+    add('   re-exports a `pub` scan would miss, which are extracted by name rather')
+    add('   than exempted in prose;')
+    add('2. every timed row names at least one correctness check, because a timing')
+    add('   with no evidence is a measurement of an unknown operation;')
+    add('3. given a report, the measured set is **exactly** the workload set below —')
+    add('   a workload that disappeared and one that appeared without being written')
+    add('   down are both failures;')
+    add('4. every check this file cites was actually recorded by the run.')
+    add('')
+    add('The workload lists are generated from a real run rather than maintained by')
+    add('hand, because a hundred hand-written lists would drift:')
+    add('')
+    add('```sh')
+    add('./core-ops/coverage/matrix.py sync \\')
+    add('    --samples-go results/<run>/quick/go-pass1.json \\')
+    add('    --samples-rust results/<run>/quick/rust-pass1.json')
+    add('```')
+    add('')
+    add('Workload labels are profile-independent -- the swept points are the same')
+    add('absolute sizes in every profile, and a worker count appears as `jobs-N`')
+    add('with the number in the sample\'s dimensions -- so one matrix describes')
+    add('both profiles.')
     add('')
     add('## How to read the status column')
     add('')

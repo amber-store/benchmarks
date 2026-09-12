@@ -103,7 +103,7 @@ amber-core-ops-rs --out <file.json> --scratch <dir> [options]
 
 Measures the Rust Amber-Store core's exported operations in process and
 writes one JSON document with the shared raw-sample schema. Driven by
-core-ops/run.sh, which also builds the Go counterpart and the report.
+the repository's ./run.sh, which also builds the Go counterpart and the report.
 
   --profile quick|standard   fixture sizes and repetition counts (default quick)
   --out <file>               where to write the sample document (required)

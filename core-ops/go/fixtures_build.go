@@ -33,9 +33,15 @@ type payloadSet struct {
 	Content   string
 }
 
-// dims renders the set as workload dimensions.
+// dims renders the set as workload dimensions. Every point of the grid
+// belongs to the object-size sweep, in the series named by its content kind;
+// the empty object is its own series, because a zero-length object has no
+// content and so belongs to no content curve.
 func (ps payloadSet) dims() Dims {
-	return Dims{ItemBytes: ps.ItemBytes, Items: int64(len(ps.Items)), Content: ps.Content}
+	return Dims{
+		ItemBytes: ps.ItemBytes, Items: int64(len(ps.Items)), Content: ps.Content,
+		Sweep: "item_bytes", Series: ps.Content,
+	}
 }
 
 // limit returns the leading part of the set whose total is at most max bytes,
@@ -483,6 +489,11 @@ func entryFor(i int, seed uint64, withXattrs []byte) fstree.Entry {
 type entrySet struct {
 	Name    string
 	Content string
+	// Series is the scaling family this point belongs to. The plain sets
+	// form the entry-count curve; the with-xattrs and partial-change
+	// variants are single points at a fixed count and so are their own
+	// series, which keeps them out of a curve they would distort.
+	Series  string
 	Entries []fstree.Entry
 	Enc     []byte
 }
@@ -553,9 +564,9 @@ func buildCodecFixtures(fx *Fixtures, p Profile) {
 	// fixed count: one whose entries carry extended attributes, and one
 	// that is the 128-entry set with a single entry's content key
 	// rewritten -- the shape an incremental update actually produces.
-	addEntries := func(name, content string, es []fstree.Entry) {
+	addEntries := func(name, content, series string, es []fstree.Entry) {
 		fx.EntrySets = append(fx.EntrySets, entrySet{
-			Name: name, Content: content, Entries: es,
+			Name: name, Content: content, Series: series, Entries: es,
 			Enc: mustV(fstree.EncodeDirLeaf(es)).Bytes,
 		})
 	}
@@ -564,9 +575,9 @@ func buildCodecFixtures(fx *Fixtures, p Profile) {
 		for i := 0; i < n; i++ {
 			es = append(es, entryFor(i, p.Seed+40, nil))
 		}
-		addEntries(fmt.Sprintf("entries-%d", n), "structured", es)
+		addEntries(fmt.Sprintf("entries-%d", n), "structured", "plain", es)
 	}
-	addEntries("entries-128-with-xattrs", "structured", fx.EntriesLarge)
+	addEntries("entries-128-with-xattrs", "structured", "with-xattrs", fx.EntriesLarge)
 	changed := make([]fstree.Entry, len(fx.EntriesLarge))
 	copy(changed, fx.EntriesLarge)
 	one := changed[len(changed)/2]
@@ -575,7 +586,7 @@ func buildCodecFixtures(fx *Fixtures, p Profile) {
 	ck := mustV(key.NewFromHash(key.Blob, 4242, h))
 	one.ContentKey = keyBytes(ck)
 	changed[len(changed)/2] = one
-	addEntries("entries-128-partial-change", "partial-change", changed)
+	addEntries("entries-128-partial-change", "partial-change", "partial-change", changed)
 
 	for _, n := range []int{8, 128, 1024} {
 		ps := mkPairs(n)

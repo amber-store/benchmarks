@@ -302,8 +302,19 @@ def _check_checksums(go, rust, ok):
     ok.append(f'every repetition of each of the {stable_cases // 2} stable cases produced '
               'the same output')
 
+    gall = {_key(s) for s in go['samples']}
+    rall = {_key(s) for s in rust['samples']}
+    shared = gall & rall
     gx = {_key(s): s for s in go['samples'] if s.get('cross_checksum')}
     rx = {_key(s): s for s in rust['samples'] if s.get('cross_checksum')}
+    # A case only one core measures cannot require the two to agree; claiming
+    # it would be a contradiction rather than a stricter check.
+    lonely = sorted((set(gx) | set(rx)) - shared)
+    if lonely:
+        raise Invalid('a single-core case claims cross-core output equality: '
+                      f'{[f"{k[1]}/{k[2]}" for k in lonely[:3]]}')
+    gx = {k: v for k, v in gx.items() if k in shared}
+    rx = {k: v for k, v in rx.items() if k in shared}
     if not gx:
         raise Invalid('no case requires the two cores to produce the same output')
     only_go = sorted(set(gx) - set(rx))
@@ -398,14 +409,17 @@ def _check_manifest(gcases, rcases, go, rust, manifest, ok):
                 f'the {core}-only measured set is not the manifest\'s: '
                 f'missing={sorted(want - got)} unexpected={sorted(got - want)}')
 
+    # A check the manifest cites has to have been recorded by the core that
+    # can run it. Some are single-core by construction -- a Rust-only module
+    # has Rust-only evidence -- so the requirement is "at least one side",
+    # and the cross-core equality of the comparable ones is a separate rule.
     want_checks = set(manifest.get('checks') or [])
     if want_checks:
-        for core, doc in (('go', go), ('rust', rust)):
-            got = {c['id'] for c in doc['checks']}
-            missing = sorted(want_checks - got)
-            if missing:
-                raise Invalid(f'the manifest expects checks the {core} run did not record: '
-                              f'{missing[:5]}')
+        got = {c['id'] for c in go['checks']} | {c['id'] for c in rust['checks']}
+        missing = sorted(want_checks - got)
+        if missing:
+            raise Invalid(f'the coverage manifest cites checks that no run recorded: '
+                          f'{missing}')
     n_cases = sum(len(v) for v in expected.values())
     ok.append(f'the measured set is exactly the manifest\'s: {len(expected)} paired '
               f'operations over {n_cases} workloads, and every check it names was recorded')

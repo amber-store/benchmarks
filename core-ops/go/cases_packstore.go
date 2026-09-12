@@ -677,15 +677,6 @@ func blobsOf(ps payloadSet) []fstree.Object {
 	return out
 }
 
-func storeObjectsOfSize(p Profile, n, size int, salt uint64) []fstree.Object {
-	out := make([]fstree.Object, 0, n)
-	for i := 0; i < n; i++ {
-		b := randomBytes(p.Seed+salt+uint64(i)*0x100000001B3, size)
-		out = append(out, mustV(fstree.EncodeBlob(b)))
-	}
-	return out
-}
-
 func keySet(ks []key.Key) map[key.Key]bool {
 	m := make(map[key.Key]bool, len(ks))
 	for _, k := range ks {

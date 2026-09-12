@@ -126,6 +126,13 @@ type Dims struct {
 	// Workers is the worker count the operation was asked for; 0 means it
 	// chose its own.
 	Workers int64 `json:"workers,omitempty"`
+	// Sweep names the dimension this case varies, and Series the family it
+	// varies within. A scaling curve is exactly the set of cases of one
+	// operation with the same Sweep and Series, and that is declared here
+	// rather than inferred: guessing which dimensions co-vary from the
+	// numbers alone produces curves that are secretly mixtures.
+	Sweep  string `json:"sweep,omitempty"`
+	Series string `json:"series,omitempty"`
 }
 
 // Check is one correctness assertion. Digest, when set, is a canonical

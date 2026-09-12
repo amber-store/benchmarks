@@ -70,29 +70,36 @@ pub fn build_fixtures(scratch: &Path, wire_dir: &Path, p: &Profile, xattrs: bool
     // single entry's content key rewritten -- the shape an incremental
     // update actually produces.
     let mut entry_sets: Vec<EntrySet> = Vec::new();
-    let mut add_entries = |name: &str, content: &str, es: Vec<Entry>| {
+    let mut add_entries = |name: &str, content: &str, series: &str, es: Vec<Entry>| {
         let enc = fstree::encode_dir_leaf(&es).unwrap().bytes;
         entry_sets.push(EntrySet {
             name: name.to_string(),
             content: content.to_string(),
+            series: series.to_string(),
             entries: es,
             enc,
         });
     };
     for n in [8usize, 128, 1024] {
         let es: Vec<Entry> = (0..n).map(|i| entry_for(i, seed + 40, None)).collect();
-        add_entries(&format!("entries-{n}"), "structured", es);
+        add_entries(&format!("entries-{n}"), "structured", "plain", es);
     }
     add_entries(
         "entries-128-with-xattrs",
         "structured",
+        "with-xattrs",
         entries_large.clone(),
     );
     let mut changed = entries_large.clone();
     let mid = changed.len() / 2;
     let h: [u8; 32] = random_bytes(seed + 41, 32).try_into().unwrap();
     changed[mid].content_key = key_bytes(Key::new_from_hash(Type::Blob, 4242, h));
-    add_entries("entries-128-partial-change", "partial-change", changed);
+    add_entries(
+        "entries-128-partial-change",
+        "partial-change",
+        "partial-change",
+        changed,
+    );
 
     let mut pair_sets: Vec<PairSet> = Vec::new();
     for n in [8usize, 128, 1024] {
@@ -729,6 +736,7 @@ pub fn store_objects(p: &Profile, n: usize, salt: u64) -> Vec<Object> {
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn store_objects_of_size(p: &Profile, n: usize, size: usize, salt: u64) -> Vec<Object> {
     (0..n)
         .map(|i| {

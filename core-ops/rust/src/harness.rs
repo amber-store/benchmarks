@@ -87,6 +87,15 @@ pub struct Dims {
     /// The worker count the operation was asked for; 0 means it chose its own.
     #[serde(skip_serializing_if = "is_zero_i64")]
     pub workers: i64,
+    /// The dimension this case varies, and the family it varies within. A
+    /// scaling curve is exactly the set of cases of one operation with the
+    /// same sweep and series, and that is declared here rather than
+    /// inferred: guessing which dimensions co-vary from the numbers alone
+    /// produces curves that are secretly mixtures.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub sweep: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub series: String,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -182,7 +191,11 @@ impl Case {
         self
     }
 
-    /// The accumulator legitimately varies between repetitions.
+    /// The accumulator legitimately varies between repetitions. No case
+    /// needs it today -- every measured operation turned out to have a
+    /// reproducible output -- but the report's rule is stated in terms of
+    /// it, so the way to declare an exception stays in the API.
+    #[allow(dead_code)]
     pub fn unstable(mut self) -> Case {
         self.unstable = true;
         self

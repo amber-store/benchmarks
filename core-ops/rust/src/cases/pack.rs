@@ -7,8 +7,8 @@ use amber_store_core::key::{Key, Type};
 use crate::cases::payload_set;
 use crate::env::Env;
 use crate::fixtures::{
-    PayloadSet, digest, digest_strings, digest_vecs, fold_bool, fold_i64, fold_key, fold_u64,
-    new_fold, sink_bytes,
+    PayloadSet, digest_strings, digest_vecs, fold_bool, fold_i64, fold_key, fold_u64, new_fold,
+    sink_bytes,
 };
 use crate::harness::{Case, Dims, Recorder, State, WireInput, bytes_kind};
 

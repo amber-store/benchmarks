@@ -15,8 +15,8 @@ use crate::fixtures::{
     PayloadSet, RecordLoc, digest_strings, fold_bool, fold_i64, fold_key, fold_u64, new_fold,
     payload_named, sink_bytes, writers_label,
 };
-use crate::fixtures_build::{object_seq, store_objects, store_objects_of_size, store_options};
-use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
+use crate::fixtures_build::{object_seq, store_objects, store_options};
+use crate::harness::{Case, Dims, Recorder, State};
 use crate::stores::{
     StoreHandle, copied_dir, copied_store, dir_bytes, fresh_store, fresh_store_sync, open_store,
     work_dir,

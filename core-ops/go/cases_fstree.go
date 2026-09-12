@@ -62,7 +62,8 @@ func fstreeCases(e *Env) []Case {
 	for _, es := range fx.EntrySets {
 		es := es
 		dims := Dims{Entries: int64(len(es.Entries)), Items: int64(reps),
-			ItemBytes: int64(len(es.Enc)), Content: es.Content, Shape: "leaf"}
+			ItemBytes: int64(len(es.Enc)), Content: es.Content, Shape: "leaf",
+			Sweep: "entries", Series: es.Series}
 		out = append(out,
 			Case{
 				Group: "fstree", Op: "fstree.encode_dir_leaf", Workload: es.Name, Threads: 1,
@@ -113,7 +114,8 @@ func fstreeCases(e *Env) []Case {
 	for _, pset := range fx.PairSets {
 		pset := pset
 		dims := Dims{Entries: int64(len(pset.Pairs)), Items: int64(reps),
-			ItemBytes: int64(len(pset.Enc)), Content: "structured", Shape: "index"}
+			ItemBytes: int64(len(pset.Enc)), Content: "structured", Shape: "index",
+			Sweep: "entries", Series: "plain"}
 		out = append(out,
 			Case{
 				Group: "fstree", Op: "fstree.encode_dir_node", Workload: pset.Name, Threads: 1,
@@ -159,7 +161,8 @@ func fstreeCases(e *Env) []Case {
 	for _, cs := range fx.ChildSets {
 		cs := cs
 		dims := Dims{Entries: int64(len(cs.Keys)), Items: int64(reps),
-			ItemBytes: int64(len(cs.Enc)), Content: "structured", Shape: "file-index"}
+			ItemBytes: int64(len(cs.Enc)), Content: "structured", Shape: "file-index",
+			Sweep: "entries", Series: "plain"}
 		out = append(out,
 			Case{
 				Group: "fstree", Op: "fstree.encode_file_node", Workload: cs.Name, Threads: 1,
@@ -265,8 +268,9 @@ func fstreeCases(e *Env) []Case {
 		n := n
 		out = append(out, Case{
 			Group: "fstree", Op: "fstree.dir_builder", Workload: fmt.Sprintf("entries-%d", n), Threads: 1,
-			Ops:           n,
-			Dims:          Dims{Entries: int64(n), Width: int64(n), Depth: 1, Shape: "wide", Content: "structured"},
+			Ops: n,
+			Dims: Dims{Entries: int64(n), Width: int64(n), Depth: 1, Shape: "wide",
+				Content: "structured", Sweep: "entries", Series: "plain"},
 			CrossChecksum: true,
 			Setup: func(en *Env) any {
 				entries := make([]fstree.Entry, 0, n)
@@ -295,8 +299,9 @@ func fstreeCases(e *Env) []Case {
 		n := n
 		out = append(out, Case{
 			Group: "fstree", Op: "fstree.index_builder_file", Workload: fmt.Sprintf("children-%d", n), Threads: 1,
-			Ops:           n,
-			Dims:          Dims{Entries: int64(n), Width: int64(n), Shape: "file-index", Content: "structured"},
+			Ops: n,
+			Dims: Dims{Entries: int64(n), Width: int64(n), Shape: "file-index",
+				Content: "structured", Sweep: "entries", Series: "plain"},
 			CrossChecksum: true,
 			Setup: func(en *Env) any {
 				ks := make([]key.Key, 0, n)
@@ -328,13 +333,16 @@ func fstreeCases(e *Env) []Case {
 	lookups := e.Profile.BatchOps
 	for _, d := range fx.Dirs {
 		d := d
-		wdims := Dims{Entries: int64(d.Entries), Width: int64(d.Entries), Depth: 1,
-			Shape: "wide", Content: "structured", Objects: d.Objects}
+		wdims := func(series string) Dims {
+			return Dims{Entries: int64(d.Entries), Width: int64(d.Entries), Depth: 1,
+				Shape: "wide", Content: "structured", Objects: d.Objects,
+				Sweep: "width", Series: series}
+		}
 		out = append(out,
 			Case{
 				Group: "fstree", Op: "fstree.lookup_entry",
 				Workload: fmt.Sprintf("width-%d/hit", d.Entries), Threads: 1, Ops: lookups,
-				Dims: wdims, CrossChecksum: true,
+				Dims: wdims("hit"), CrossChecksum: true,
 				Setup: func(*Env) any { return nil },
 				Run: func(en *Env, _ any) uint64 {
 					acc := newFold()
@@ -352,7 +360,7 @@ func fstreeCases(e *Env) []Case {
 			Case{
 				Group: "fstree", Op: "fstree.lookup_entry",
 				Workload: fmt.Sprintf("width-%d/miss", d.Entries), Threads: 1, Ops: lookups,
-				Dims: wdims, CrossChecksum: true,
+				Dims: wdims("miss"), CrossChecksum: true,
 				Setup: func(*Env) any { return nil },
 				Run: func(en *Env, _ any) uint64 {
 					acc := newFold()
@@ -366,7 +374,7 @@ func fstreeCases(e *Env) []Case {
 			Case{
 				Group: "fstree", Op: "fstree.collect_entries",
 				Workload: fmt.Sprintf("width-%d", d.Entries), Threads: 1, Ops: d.Entries,
-				Dims: wdims, CrossChecksum: true,
+				Dims: wdims("plain"), CrossChecksum: true,
 				Setup: func(*Env) any { return nil },
 				Run: func(en *Env, _ any) uint64 {
 					es, err := fstree.CollectEntries(d.Root, en.fx.Mem.get)
@@ -384,7 +392,7 @@ func fstreeCases(e *Env) []Case {
 			Case{
 				Group: "fstree", Op: "fstree.list_entries",
 				Workload: fmt.Sprintf("width-%d/full-paging-100", d.Entries), Threads: 1, Ops: d.Entries,
-				Dims: wdims, CrossChecksum: true,
+				Dims: wdims("plain"), CrossChecksum: true,
 				Setup: func(*Env) any { return nil },
 				Run: func(en *Env, _ any) uint64 {
 					acc := newFold()
@@ -407,7 +415,7 @@ func fstreeCases(e *Env) []Case {
 			Case{
 				Group: "fstree", Op: "fstree.reachable_keys",
 				Workload: fmt.Sprintf("width-%d", d.Entries), Threads: 0, Ops: int(d.Objects),
-				Dims: wdims, CrossChecksum: true,
+				Dims: wdims("plain"), CrossChecksum: true,
 				Setup: func(*Env) any { return nil },
 				Run: func(en *Env, _ any) uint64 {
 					ks, err := fstree.ReachableKeys(d.Root, en.fx.Mem.get)
@@ -446,7 +454,8 @@ func fstreeCases(e *Env) []Case {
 	for _, ch := range fx.Chains {
 		ch := ch
 		ddims := Dims{Depth: int64(ch.Depth), Shape: "deep", Content: "structured",
-			Width: int64(fx.Dirs[0].Entries), Items: 256}
+			Width: int64(fx.Dirs[0].Entries), Items: 256,
+			Sweep: "depth", Series: "plain"}
 		out = append(out,
 			Case{
 				Group: "fstree", Op: "fstree.resolve_path",
@@ -564,7 +573,7 @@ func fstreeCases(e *Env) []Case {
 			Group: "fstree", Op: "fstree.check_complete",
 			Workload: fmt.Sprintf("width-%d/jobs-1", d.Entries), Threads: 1, Ops: int(d.Objects),
 			Dims: Dims{Entries: int64(d.Entries), Width: int64(d.Entries), Objects: d.Objects,
-				Shape: "wide", Content: "structured"},
+				Shape: "wide", Content: "structured", Sweep: "width", Series: "plain"},
 			CrossChecksum: true,
 			Setup:         func(*Env) any { return nil },
 			Run: func(en *Env, _ any) uint64 {
