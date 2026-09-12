@@ -1,0 +1,293 @@
+{
+  "title": "tree/lifecycle — store size on disk",
+  "subtitle": [
+    "median allocated bytes of the backend's own store directory after each operation (smaller is denser)"
+  ],
+  "footer": [
+    "Allocated bytes, i.e. what the filesystem charges, not the sum of file lengths. Both are in counters.csv.",
+    "Sample count is on every bar. median = lower of the two middle samples for even n; p95 = nearest-rank (sorted ascending, index ceil(0.95*n)-1); stddev = sample standard deviation with n-1 denominator (null for n < 2); cv = stddev/mean Repetitions requested: 2.",
+    "Small sample: 2 repetition(s) per bar. Dispersion is in summary.csv (cv) and every raw sample is in samples.csv. Treat a difference of the same order as the spread as indicative only.",
+    "Cache policy: The page cache was NOT dropped: dropping it needs root, which this harness does not ask for. Every store is freshly created per repetition, and reads follow the writes that filled them, so read and restore numbers are WARM-CACHE numbers and must not be described as cold. Write numbers are unaffected. Enable --drop-caches on a host where the harness can write /proc/sys/vm/drop_caches to change this.",
+    "amber-go: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "amber-rust: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "fs-sha256: compression none, by construction | encryption none | durability objects are written to a temporary name, fsynced and renamed; the reference file is fsynced last | concurrency single-threaded, by construction",
+    "git: compression zlib per object, plus delta compression inside packs | encryption none | durability loose objects and packs are written then renamed; `core.fsyncObjectFiles` is left at its default | concurrency single-threaded for commits; packing uses --threads (left at its default)",
+    "restic: compression zstd (repository format 2), enabled by default | encryption mandatory AES-256-CTR with Poly1305-AES authentication; every byte stored is encrypted and authenticated | durability pack files and index files are written then fsynced; snapshots are committed last | concurrency parallel file readers and uploaders",
+    "Run smoke-1789241936307339195 on AMD Ryzen 9 7950X3D 16-Core Processor (32 logical cores), profile smoke, seed 20260913."
+  ],
+  "categories": [
+    "ingest_fresh",
+    "ingest_repeat",
+    "ingest_changed",
+    "list_recursive",
+    "read_full",
+    "restore_full",
+    "ref_delete",
+    "gc"
+  ],
+  "series": [
+    "amber-go",
+    "amber-rust",
+    "fs-sha256",
+    "git",
+    "restic"
+  ],
+  "cells": [
+    [
+      {
+        "value": 16400384.0,
+        "high": 16400384.0,
+        "label": "15.64 MiB",
+        "n": 2
+      },
+      {
+        "value": 13385728.0,
+        "high": 13385728.0,
+        "label": "12.77 MiB",
+        "n": 2
+      },
+      {
+        "value": 26943488.0,
+        "high": 26943488.0,
+        "label": "25.70 MiB",
+        "n": 2
+      },
+      {
+        "value": 22917120.0,
+        "high": 22917120.0,
+        "label": "21.86 MiB",
+        "n": 2
+      },
+      {
+        "value": 14786560.0,
+        "high": 17670144.0,
+        "label": "14.10 MiB",
+        "n": 2
+      }
+    ],
+    [
+      {
+        "value": 16408576.0,
+        "high": 16408576.0,
+        "label": "15.65 MiB",
+        "n": 2
+      },
+      {
+        "value": 13393920.0,
+        "high": 13393920.0,
+        "label": "12.77 MiB",
+        "n": 2
+      },
+      {
+        "value": 26988544.0,
+        "high": 26988544.0,
+        "label": "25.74 MiB",
+        "n": 2
+      },
+      {
+        "value": 22929408.0,
+        "high": 22929408.0,
+        "label": "21.87 MiB",
+        "n": 2
+      },
+      {
+        "value": 14790656.0,
+        "high": 17674240.0,
+        "label": "14.11 MiB",
+        "n": 2
+      }
+    ],
+    [
+      {
+        "value": 16609280.0,
+        "high": 16613376.0,
+        "label": "15.84 MiB",
+        "n": 2
+      },
+      {
+        "value": 13590528.0,
+        "high": 13590528.0,
+        "label": "12.96 MiB",
+        "n": 2
+      },
+      {
+        "value": 27373568.0,
+        "high": 27373568.0,
+        "label": "26.11 MiB",
+        "n": 2
+      },
+      {
+        "value": 23441408.0,
+        "high": 23441408.0,
+        "label": "22.36 MiB",
+        "n": 2
+      },
+      {
+        "value": 15011840.0,
+        "high": 17895424.0,
+        "label": "14.32 MiB",
+        "n": 2
+      }
+    ],
+    [
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      }
+    ],
+    [
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      }
+    ],
+    [
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not measured",
+        "n": null
+      }
+    ],
+    [
+      {
+        "value": 16605184.0,
+        "high": 16609280.0,
+        "label": "15.84 MiB",
+        "n": 2
+      },
+      {
+        "value": 13590528.0,
+        "high": 13590528.0,
+        "label": "12.96 MiB",
+        "n": 2
+      },
+      {
+        "value": 27283456.0,
+        "high": 27283456.0,
+        "label": "26.02 MiB",
+        "n": 2
+      },
+      {
+        "value": 23425024.0,
+        "high": 23425024.0,
+        "label": "22.34 MiB",
+        "n": 2
+      },
+      {
+        "value": 15003648.0,
+        "high": 17887232.0,
+        "label": "14.31 MiB",
+        "n": 2
+      }
+    ],
+    [
+      {
+        "value": 11837440.0,
+        "high": 11853824.0,
+        "label": "11.29 MiB",
+        "n": 2
+      },
+      {
+        "value": 13402112.0,
+        "high": 13418496.0,
+        "label": "12.78 MiB",
+        "n": 2
+      },
+      {
+        "value": 27025408.0,
+        "high": 27025408.0,
+        "label": "25.77 MiB",
+        "n": 2
+      },
+      {
+        "value": 11755520.0,
+        "high": 11755520.0,
+        "label": "11.21 MiB",
+        "n": 2
+      },
+      {
+        "value": 14811136.0,
+        "high": 17694720.0,
+        "label": "14.12 MiB",
+        "n": 2
+      }
+    ]
+  ]
+}

@@ -1,0 +1,292 @@
+{
+  "title": "tree/lifecycle — elapsed time",
+  "subtitle": [
+    "median elapsed wall-clock time per operation, milliseconds (shorter is faster); the tick is p95"
+  ],
+  "footer": [
+    "Sample count is on every bar. median = lower of the two middle samples for even n; p95 = nearest-rank (sorted ascending, index ceil(0.95*n)-1); stddev = sample standard deviation with n-1 denominator (null for n < 2); cv = stddev/mean Repetitions requested: 3.",
+    "Small sample: 3 repetition(s) per bar. Dispersion is in summary.csv (cv) and every raw sample is in samples.csv. Treat a difference of the same order as the spread as indicative only.",
+    "Cache policy: The page cache was NOT dropped: dropping it needs root, which this harness does not ask for. Every store is freshly created per repetition, and reads follow the writes that filled them, so read and restore numbers are WARM-CACHE numbers and must not be described as cold. Write numbers are unaffected. Enable --drop-caches on a host where the harness can write /proc/sys/vm/drop_caches to change this.",
+    "amber-go: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "amber-rust: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "fs-sha256: compression none, by construction | encryption none | durability objects are written to a temporary name, fsynced and renamed; the reference file is fsynced last | concurrency single-threaded, by construction",
+    "git: compression zlib per object, plus delta compression inside packs | encryption none | durability loose objects and packs are written then renamed; `core.fsyncObjectFiles` is left at its default | concurrency single-threaded for commits; packing uses --threads (left at its default)",
+    "restic: compression zstd (repository format 2), enabled by default | encryption mandatory AES-256-CTR with Poly1305-AES authentication; every byte stored is encrypted and authenticated | durability pack files and index files are written then fsynced; snapshots are committed last | concurrency parallel file readers and uploaders",
+    "Run standard-1789242092913944754 on AMD Ryzen 9 7950X3D 16-Core Processor (32 logical cores), profile standard, seed 20260912."
+  ],
+  "categories": [
+    "ingest_fresh",
+    "ingest_repeat",
+    "ingest_changed",
+    "list_recursive",
+    "read_full",
+    "restore_full",
+    "ref_delete",
+    "gc"
+  ],
+  "series": [
+    "amber-go",
+    "amber-rust",
+    "fs-sha256",
+    "git",
+    "restic"
+  ],
+  "cells": [
+    [
+      {
+        "value": 1385.34287,
+        "high": 1405.202553,
+        "label": "1.39 s",
+        "n": 3
+      },
+      {
+        "value": 581.818959,
+        "high": 623.653701,
+        "label": "581.8 ms",
+        "n": 3
+      },
+      {
+        "value": 2740.311784,
+        "high": 2775.44233,
+        "label": "2.74 s",
+        "n": 3
+      },
+      {
+        "value": 13834.805094,
+        "high": 13838.603581,
+        "label": "13.83 s",
+        "n": 3
+      },
+      {
+        "value": 1732.672665,
+        "high": 1764.027906,
+        "label": "1.73 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 753.364901,
+        "high": 756.054603,
+        "label": "753.4 ms",
+        "n": 3
+      },
+      {
+        "value": 210.367816,
+        "high": 213.199178,
+        "label": "210.4 ms",
+        "n": 3
+      },
+      {
+        "value": 1034.137189,
+        "high": 1034.367319,
+        "label": "1.03 s",
+        "n": 3
+      },
+      {
+        "value": 3145.452119,
+        "high": 3148.124246,
+        "label": "3.15 s",
+        "n": 3
+      },
+      {
+        "value": 819.260463,
+        "high": 823.393571,
+        "label": "819.3 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 802.016715,
+        "high": 837.070165,
+        "label": "802.0 ms",
+        "n": 3
+      },
+      {
+        "value": 208.637509,
+        "high": 212.220731,
+        "label": "208.6 ms",
+        "n": 3
+      },
+      {
+        "value": 1140.457335,
+        "high": 1143.434722,
+        "label": "1.14 s",
+        "n": 3
+      },
+      {
+        "value": 3188.882003,
+        "high": 3192.318566,
+        "label": "3.19 s",
+        "n": 3
+      },
+      {
+        "value": 1009.81092,
+        "high": 1012.210421,
+        "label": "1.01 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 5041.438893,
+        "high": 5068.757093,
+        "label": "5.04 s",
+        "n": 3
+      },
+      {
+        "value": 5572.743348,
+        "high": 5670.648053,
+        "label": "5.57 s",
+        "n": 3
+      },
+      {
+        "value": 3.510279,
+        "high": 3.651119,
+        "label": "3.5 ms",
+        "n": 3
+      },
+      {
+        "value": 56.373148,
+        "high": 56.388459,
+        "label": "56.4 ms",
+        "n": 3
+      },
+      {
+        "value": 760.864213,
+        "high": 764.956786,
+        "label": "760.9 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 780.717407,
+        "high": 784.183419,
+        "label": "780.7 ms",
+        "n": 3
+      },
+      {
+        "value": 452.195903,
+        "high": 452.85268,
+        "label": "452.2 ms",
+        "n": 3
+      },
+      {
+        "value": 146.274389,
+        "high": 146.623302,
+        "label": "146.3 ms",
+        "n": 3
+      },
+      {
+        "value": 3964.737262,
+        "high": 3966.889967,
+        "label": "3.96 s",
+        "n": 3
+      },
+      {
+        "value": 2050.430333,
+        "high": 2070.534101,
+        "label": "2.05 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 1727.387005,
+        "high": 1742.8986,
+        "label": "1.73 s",
+        "n": 3
+      },
+      {
+        "value": 2141.658464,
+        "high": 2152.851214,
+        "label": "2.14 s",
+        "n": 3
+      },
+      {
+        "value": 606.463892,
+        "high": 606.623919,
+        "label": "606.5 ms",
+        "n": 3
+      },
+      {
+        "value": 3943.356469,
+        "high": 3946.944512,
+        "label": "3.94 s",
+        "n": 3
+      },
+      {
+        "value": 1804.073277,
+        "high": 1808.487578,
+        "label": "1.80 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 66.50417,
+        "high": 66.670533,
+        "label": "66.5 ms",
+        "n": 3
+      },
+      {
+        "value": 71.49429,
+        "high": 71.834134,
+        "label": "71.5 ms",
+        "n": 3
+      },
+      {
+        "value": 1.601802,
+        "high": 1.715491,
+        "label": "1.6 ms",
+        "n": 3
+      },
+      {
+        "value": 2.18122,
+        "high": 2.403993,
+        "label": "2.2 ms",
+        "n": 3
+      },
+      {
+        "value": 715.36377,
+        "high": 729.368351,
+        "label": "715.4 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 431.687936,
+        "high": 443.625366,
+        "label": "431.7 ms",
+        "n": 3
+      },
+      {
+        "value": 356.667066,
+        "high": 394.934752,
+        "label": "356.7 ms",
+        "n": 3
+      },
+      {
+        "value": 22.267572,
+        "high": 23.130968,
+        "label": "22.3 ms",
+        "n": 3
+      },
+      {
+        "value": 101030.111812,
+        "high": 101177.712153,
+        "label": "1.7 min",
+        "n": 3
+      },
+      {
+        "value": 5580.005584,
+        "high": 5640.760663,
+        "label": "5.58 s",
+        "n": 3
+      }
+    ]
+  ]
+}

@@ -1,0 +1,192 @@
+{
+  "title": "backup/retention — elapsed time",
+  "subtitle": [
+    "median elapsed wall-clock time per operation, milliseconds (shorter is faster); the tick is p95"
+  ],
+  "footer": [
+    "Sample count is on every bar. median = lower of the two middle samples for even n; p95 = nearest-rank (sorted ascending, index ceil(0.95*n)-1); stddev = sample standard deviation with n-1 denominator (null for n < 2); cv = stddev/mean Repetitions requested: 3.",
+    "Small sample: 3 repetition(s) per bar. Dispersion is in summary.csv (cv) and every raw sample is in samples.csv. Treat a difference of the same order as the spread as indicative only.",
+    "Cache policy: The page cache was NOT dropped: dropping it needs root, which this harness does not ask for. Every store is freshly created per repetition, and reads follow the writes that filled them, so read and restore numbers are WARM-CACHE numbers and must not be described as cold. Write numbers are unaffected. Enable --drop-caches on a host where the harness can write /proc/sys/vm/drop_caches to change this.",
+    "amber-go: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "amber-rust: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "restic: compression zstd (repository format 2), enabled by default | encryption mandatory AES-256-CTR with Poly1305-AES authentication; every byte stored is encrypted and authenticated | durability pack files and index files are written then fsynced; snapshots are committed last | concurrency parallel file readers and uploaders",
+    "Run standard-1789242092913944754 on AMD Ryzen 9 7950X3D 16-Core Processor (32 logical cores), profile standard, seed 20260912."
+  ],
+  "categories": [
+    "backup_initial",
+    "backup_unchanged",
+    "backup_changed",
+    "backup_changed_again",
+    "list_snapshot",
+    "restore_latest",
+    "forget_oldest",
+    "prune"
+  ],
+  "series": [
+    "amber-go",
+    "amber-rust",
+    "restic"
+  ],
+  "cells": [
+    [
+      {
+        "value": 1406.624978,
+        "high": 1422.790698,
+        "label": "1.41 s",
+        "n": 3
+      },
+      {
+        "value": 552.674391,
+        "high": 595.831216,
+        "label": "552.7 ms",
+        "n": 3
+      },
+      {
+        "value": 1727.304662,
+        "high": 1734.180341,
+        "label": "1.73 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 709.252309,
+        "high": 751.21875,
+        "label": "709.3 ms",
+        "n": 3
+      },
+      {
+        "value": 256.459695,
+        "high": 265.026622,
+        "label": "256.5 ms",
+        "n": 3
+      },
+      {
+        "value": 818.368998,
+        "high": 822.032013,
+        "label": "818.4 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 808.532161,
+        "high": 823.652408,
+        "label": "808.5 ms",
+        "n": 3
+      },
+      {
+        "value": 251.190403,
+        "high": 256.895747,
+        "label": "251.2 ms",
+        "n": 3
+      },
+      {
+        "value": 1012.439745,
+        "high": 1014.948745,
+        "label": "1.01 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 777.572925,
+        "high": 800.090687,
+        "label": "777.6 ms",
+        "n": 3
+      },
+      {
+        "value": 212.446737,
+        "high": 212.465408,
+        "label": "212.4 ms",
+        "n": 3
+      },
+      {
+        "value": 1011.012361,
+        "high": 1012.752415,
+        "label": "1.01 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 5514.878213,
+        "high": 5535.677011,
+        "label": "5.51 s",
+        "n": 3
+      },
+      {
+        "value": 6267.870276,
+        "high": 6485.499693,
+        "label": "6.27 s",
+        "n": 3
+      },
+      {
+        "value": 757.584784,
+        "high": 762.900998,
+        "label": "757.6 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 1720.942906,
+        "high": 1742.947001,
+        "label": "1.72 s",
+        "n": 3
+      },
+      {
+        "value": 2141.767973,
+        "high": 2147.007059,
+        "label": "2.14 s",
+        "n": 3
+      },
+      {
+        "value": 1790.995657,
+        "high": 1792.518617,
+        "label": "1.79 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 71.674036,
+        "high": 72.818822,
+        "label": "71.7 ms",
+        "n": 3
+      },
+      {
+        "value": 79.113114,
+        "high": 79.428358,
+        "label": "79.1 ms",
+        "n": 3
+      },
+      {
+        "value": 716.150178,
+        "high": 716.210438,
+        "label": "716.2 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 444.714804,
+        "high": 453.450615,
+        "label": "444.7 ms",
+        "n": 3
+      },
+      {
+        "value": 333.848012,
+        "high": 359.589876,
+        "label": "333.8 ms",
+        "n": 3
+      },
+      {
+        "value": 5417.011357,
+        "high": 5475.059935,
+        "label": "5.42 s",
+        "n": 3
+      }
+    ]
+  ]
+}

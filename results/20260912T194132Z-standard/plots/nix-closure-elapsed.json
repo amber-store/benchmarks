@@ -1,0 +1,276 @@
+{
+  "title": "nix/closure — elapsed time",
+  "subtitle": [
+    "median elapsed wall-clock time per operation, milliseconds (shorter is faster); the tick is p95"
+  ],
+  "footer": [
+    "Sample count is on every bar. median = lower of the two middle samples for even n; p95 = nearest-rank (sorted ascending, index ceil(0.95*n)-1); stddev = sample standard deviation with n-1 denominator (null for n < 2); cv = stddev/mean Repetitions requested: 3.",
+    "Small sample: 3 repetition(s) per bar. Dispersion is in summary.csv (cv) and every raw sample is in samples.csv. Treat a difference of the same order as the spread as indicative only.",
+    "Cache policy: The page cache was NOT dropped: dropping it needs root, which this harness does not ask for. Every store is freshly created per repetition, and reads follow the writes that filled them, so read and restore numbers are WARM-CACHE numbers and must not be described as cold. Write numbers are unaffected. Enable --drop-caches on a host where the harness can write /proc/sys/vm/drop_caches to change this.",
+    "amber-go: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "amber-rust: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated",
+    "nix: compression none in a local store; xz for NARs published to a binary cache | encryption none; integrity comes from NAR hashes and optional signatures | durability store paths are built or unpacked into a temporary name, made read-only, then registered in the SQLite database | concurrency parallel substitution and copying",
+    "Run standard-1789242092913944754 on AMD Ryzen 9 7950X3D 16-Core Processor (32 logical cores), profile standard, seed 20260912."
+  ],
+  "categories": [
+    "import_initial",
+    "import_repeat",
+    "import_incremental",
+    "catalog_list",
+    "closure_query",
+    "read_closure",
+    "cache_export",
+    "materialize_closure",
+    "cache_substitute",
+    "delete_path",
+    "gc",
+    "nar_and_reference_registration"
+  ],
+  "series": [
+    "amber-go",
+    "amber-rust",
+    "nix"
+  ],
+  "cells": [
+    [
+      {
+        "value": 332.641008,
+        "high": 335.834669,
+        "label": "332.6 ms",
+        "n": 3
+      },
+      {
+        "value": 218.265486,
+        "high": 220.826574,
+        "label": "218.3 ms",
+        "n": 3
+      },
+      {
+        "value": 82.286599,
+        "high": 94.787559,
+        "label": "82.3 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 305.747616,
+        "high": 306.499178,
+        "label": "305.7 ms",
+        "n": 3
+      },
+      {
+        "value": 292.990642,
+        "high": 295.354141,
+        "label": "293.0 ms",
+        "n": 3
+      },
+      {
+        "value": 20.779622,
+        "high": 22.28402,
+        "label": "20.8 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 436.959035,
+        "high": 443.726711,
+        "label": "437.0 ms",
+        "n": 3
+      },
+      {
+        "value": 401.350759,
+        "high": 406.364564,
+        "label": "401.4 ms",
+        "n": 3
+      },
+      {
+        "value": 73.321577,
+        "high": 73.839948,
+        "label": "73.3 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 30.078229,
+        "high": 30.977745,
+        "label": "30.1 ms",
+        "n": 3
+      },
+      {
+        "value": 34.467911,
+        "high": 34.545818,
+        "label": "34.5 ms",
+        "n": 3
+      },
+      {
+        "value": 14.992728,
+        "high": 16.933221,
+        "label": "15.0 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": 14.672794,
+        "high": 14.980733,
+        "label": "14.7 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 364.913293,
+        "high": 384.096826,
+        "label": "364.9 ms",
+        "n": 3
+      },
+      {
+        "value": 317.47307,
+        "high": 322.011592,
+        "label": "317.5 ms",
+        "n": 3
+      },
+      {
+        "value": 149.075938,
+        "high": 149.696572,
+        "label": "149.1 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": 19344.105702,
+        "high": 19387.889189,
+        "label": "19.34 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 431.515364,
+        "high": 457.958081,
+        "label": "431.5 ms",
+        "n": 3
+      },
+      {
+        "value": 469.186469,
+        "high": 478.540698,
+        "label": "469.2 ms",
+        "n": 3
+      },
+      {
+        "value": 74.301148,
+        "high": 74.828515,
+        "label": "74.3 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": 108.238882,
+        "high": 112.20315,
+        "label": "108.2 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 31.574587,
+        "high": 32.485471,
+        "label": "31.6 ms",
+        "n": 3
+      },
+      {
+        "value": 33.987277,
+        "high": 34.154665,
+        "label": "34.0 ms",
+        "n": 3
+      },
+      {
+        "value": 23.160574,
+        "high": 23.325951,
+        "label": "23.2 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 31.23532,
+        "high": 32.61054,
+        "label": "31.2 ms",
+        "n": 3
+      },
+      {
+        "value": 34.286314,
+        "high": 34.941324,
+        "label": "34.3 ms",
+        "n": 3
+      },
+      {
+        "value": 23.032369,
+        "high": 24.446801,
+        "label": "23.0 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "unsupported",
+        "n": null
+      },
+      {
+        "value": null,
+        "high": null,
+        "label": "not run",
+        "n": null
+      }
+    ]
+  ]
+}

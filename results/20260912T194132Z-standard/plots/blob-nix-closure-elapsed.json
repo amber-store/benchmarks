@@ -1,0 +1,152 @@
+{
+  "title": "blob/nix-closure — elapsed time",
+  "subtitle": [
+    "median elapsed wall-clock time per operation, milliseconds (shorter is faster); the tick is p95"
+  ],
+  "footer": [
+    "Sample count is on every bar. median = lower of the two middle samples for even n; p95 = nearest-rank (sorted ascending, index ceil(0.95*n)-1); stddev = sample standard deviation with n-1 denominator (null for n < 2); cv = stddev/mean Repetitions requested: 3.",
+    "Small sample: 3 repetition(s) per bar. Dispersion is in summary.csv (cv) and every raw sample is in samples.csv. Treat a difference of the same order as the spread as indicative only.",
+    "Cache policy: The page cache was NOT dropped: dropping it needs root, which this harness does not ask for. Every store is freshly created per repetition, and reads follow the writes that filled them, so read and restore numbers are WARM-CACHE numbers and must not be described as cold. Write numbers are unaffected. Enable --drop-caches on a host where the harness can write /proc/sys/vm/drop_caches to change this.",
+    "Object store: local garage cargo:1.3.1 [features: k2v, lmdb, sqlite, consul-discovery, kubernetes-discovery, metrics, telemetry-otlp, bundled-libs] started by the harness (none: the loopback path to the local object store was measured as it is).",
+    "amber-go-s3: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated | transport harness transport, not a product protocol: neither core ships any network client, so the harness publishes the store's on-disk pack segments and reference database with `mc mirror`",
+    "amber-rust-s3: compression per-record zstd; content keys hash the uncompressed bytes, so compression never affects addressing | encryption none: these cores store plaintext | durability pack segments are appended and fsynced on seal; the reference store is a transactional key/value database (redb in Rust, Pebble in Go) | concurrency tree building is parallel across --jobs workers; pack writes are batched and deduplicated | transport harness transport, not a product protocol: neither core ships any network client, so the harness publishes the store's on-disk pack segments and reference database with `mc mirror`",
+    "nix-binary-cache: compression none in a local store; xz for NARs published to a binary cache | encryption none; integrity comes from NAR hashes and optional signatures | durability store paths are built or unpacked into a temporary name, made read-only, then registered in the SQLite database | concurrency parallel substitution and copying | transport Nix's own S3 binary-cache store (`nix copy --to s3://...`), speaking S3 directly to the object store",
+    "retention_cleanup is the one operation here where the backends are not asked for the same thing; what each one kept is in REPORT.md and in counters.csv (retained_references). These bars are not a ranking.",
+    "Run standard-1789242092913944754 on AMD Ryzen 9 7950X3D 16-Core Processor (32 logical cores), profile standard, seed 20260912."
+  ],
+  "categories": [
+    "push_initial",
+    "push_noop",
+    "pull_fresh",
+    "push_incremental",
+    "pull_incremental",
+    "retention_cleanup"
+  ],
+  "series": [
+    "amber-go-s3",
+    "amber-rust-s3",
+    "nix-binary-cache"
+  ],
+  "cells": [
+    [
+      {
+        "value": 191.772776,
+        "high": 194.16499,
+        "label": "191.8 ms",
+        "n": 3
+      },
+      {
+        "value": 189.70694,
+        "high": 193.342559,
+        "label": "189.7 ms",
+        "n": 3
+      },
+      {
+        "value": 19483.431756,
+        "high": 19516.224116,
+        "label": "19.48 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 19.93563,
+        "high": 20.368568,
+        "label": "19.9 ms",
+        "n": 3
+      },
+      {
+        "value": 19.238667,
+        "high": 20.540373,
+        "label": "19.2 ms",
+        "n": 3
+      },
+      {
+        "value": 21.384874,
+        "high": 21.481722,
+        "label": "21.4 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 72.730655,
+        "high": 74.839346,
+        "label": "72.7 ms",
+        "n": 3
+      },
+      {
+        "value": 69.899666,
+        "high": 74.228282,
+        "label": "69.9 ms",
+        "n": 3
+      },
+      {
+        "value": 150.386871,
+        "high": 163.418191,
+        "label": "150.4 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 178.787282,
+        "high": 178.991031,
+        "label": "178.8 ms",
+        "n": 3
+      },
+      {
+        "value": 174.302135,
+        "high": 176.562413,
+        "label": "174.3 ms",
+        "n": 3
+      },
+      {
+        "value": 3034.159953,
+        "high": 3272.989701,
+        "label": "3.03 s",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 71.226256,
+        "high": 109.853589,
+        "label": "71.2 ms",
+        "n": 3
+      },
+      {
+        "value": 65.774469,
+        "high": 103.122617,
+        "label": "65.8 ms",
+        "n": 3
+      },
+      {
+        "value": 128.758123,
+        "high": 130.253547,
+        "label": "128.8 ms",
+        "n": 3
+      }
+    ],
+    [
+      {
+        "value": 200.083387,
+        "high": 204.066747,
+        "label": "200.1 ms",
+        "n": 3
+      },
+      {
+        "value": 196.394127,
+        "high": 198.975463,
+        "label": "196.4 ms",
+        "n": 3
+      },
+      {
+        "value": 37.75495,
+        "high": 38.017197,
+        "label": "37.8 ms",
+        "n": 3
+      }
+    ]
+  ]
+}
