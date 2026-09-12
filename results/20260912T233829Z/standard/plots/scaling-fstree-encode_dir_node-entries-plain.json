@@ -1,0 +1,58 @@
+{
+  "categories": [
+    "8",
+    "128",
+    "1,024"
+  ],
+  "cells": [
+    [
+      {
+        "label": "133.8 ns (133.8 ns/op)",
+        "n": 7,
+        "value": 133.771484375
+      },
+      {
+        "label": "90.2 ns (90.2 ns/op)",
+        "n": 7,
+        "value": 90.2109375
+      }
+    ],
+    [
+      {
+        "label": "70.2 ns (70.2 ns/op)",
+        "n": 7,
+        "value": 70.2098388671875
+      },
+      {
+        "label": "42.9 ns (42.9 ns/op)",
+        "n": 7,
+        "value": 42.8785400390625
+      }
+    ],
+    [
+      {
+        "label": "65.2 ns (65.2 ns/op)",
+        "n": 7,
+        "value": 65.17486572265625
+      },
+      {
+        "label": "31.6 ns (31.6 ns/op)",
+        "n": 7,
+        "value": 31.644927978515625
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 7 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Cost per unit of entries: the whole measured call divided by that dimension's total over the call. Flat means proportional; falling means fixed overhead dominated the small end.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710. The bracketed figure is the batch-normalised latency of one operation."
+  ],
+  "title": "fstree.encode_dir_node: scaling with entries, plain content (standard profile)"
+}

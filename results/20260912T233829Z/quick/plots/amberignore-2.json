@@ -1,0 +1,50 @@
+{
+  "categories": [
+    "descend \u2014 8-subdirs [1t]",
+    "root \u2014 load-root [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 5310.927734375,
+        "label": "5.311 us",
+        "n": 1,
+        "value": 5310.927734375
+      },
+      {
+        "high": 3280.759765625,
+        "label": "3.281 us",
+        "n": 1,
+        "value": 3280.759765625
+      }
+    ],
+    [
+      {
+        "high": 7585.109375,
+        "label": "7.585 us",
+        "n": 1,
+        "value": 7585.109375
+      },
+      {
+        "high": 4452.578125,
+        "label": "4.453 us",
+        "n": 1,
+        "value": 4452.578125
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "amberignore: time per operation (quick profile) \u2014 3.281 us to 7.585 us, page 2 of 2"
+}

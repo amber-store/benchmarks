@@ -1,0 +1,185 @@
+{
+  "categories": [
+    "validate \u2014 canonical [1t]",
+    "type_string \u2014 names [1t]",
+    "accessors \u2014 type+length+length_size+hash [1t]",
+    "parse \u2014 canonical [1t]",
+    "new_from_hash \u2014 batch [1t]",
+    "parse \u2014 malformed [1t]",
+    "string \u2014 hex [1t]",
+    "new \u2014 tiny-64B-text [1t]",
+    "new \u2014 empty [1t]",
+    "new \u2014 tiny-64B-duplicate [1t]",
+    "new \u2014 tiny-64B-random [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 6.613,
+        "label": "6.6 ns",
+        "n": 7,
+        "value": 6.6025
+      },
+      {
+        "high": 0.892,
+        "label": "0.9 ns",
+        "n": 7,
+        "value": 0.882
+      }
+    ],
+    [
+      {
+        "high": 12.20575,
+        "label": "12.2 ns",
+        "n": 7,
+        "value": 12.1885
+      },
+      {
+        "high": 14.5,
+        "label": "14.4 ns",
+        "n": 7,
+        "value": 14.3975
+      }
+    ],
+    [
+      {
+        "high": 12.5565,
+        "label": "12.5 ns",
+        "n": 7,
+        "value": 12.541375
+      },
+      {
+        "high": 8.290875,
+        "label": "8.3 ns",
+        "n": 7,
+        "value": 8.290875
+      }
+    ],
+    [
+      {
+        "high": 32.11125,
+        "label": "32.0 ns",
+        "n": 7,
+        "value": 31.976
+      },
+      {
+        "high": 24.9175,
+        "label": "24.9 ns",
+        "n": 7,
+        "value": 24.9125
+      }
+    ],
+    [
+      {
+        "high": 41.37375,
+        "label": "41.2 ns",
+        "n": 7,
+        "value": 41.1735
+      },
+      {
+        "high": 35.3275,
+        "label": "35.3 ns",
+        "n": 7,
+        "value": 35.3225
+      }
+    ],
+    [
+      {
+        "high": 57.64892578125,
+        "label": "57.3 ns",
+        "n": 7,
+        "value": 57.326171875
+      },
+      {
+        "high": 0.83203125,
+        "label": "0.8 ns",
+        "n": 7,
+        "value": 0.822265625
+      }
+    ],
+    [
+      {
+        "high": 88.281,
+        "label": "87.8 ns",
+        "n": 7,
+        "value": 87.7925
+      },
+      {
+        "high": 515.68025,
+        "label": "514.3 ns",
+        "n": 7,
+        "value": 514.3125
+      }
+    ],
+    [
+      {
+        "high": 107.16241455078125,
+        "label": "106.8 ns",
+        "n": 7,
+        "value": 106.7908935546875
+      },
+      {
+        "high": 82.13995361328125,
+        "label": "81.6 ns",
+        "n": 7,
+        "value": 81.6458740234375
+      }
+    ],
+    [
+      {
+        "high": 107.311875,
+        "label": "107.0 ns",
+        "n": 7,
+        "value": 106.96175
+      },
+      {
+        "high": 85.05937499999999,
+        "label": "77.5 ns",
+        "n": 7,
+        "value": 77.513125
+      }
+    ],
+    [
+      {
+        "high": 107.28656005859375,
+        "label": "107.1 ns",
+        "n": 7,
+        "value": 107.14190673828125
+      },
+      {
+        "high": 82.5328369140625,
+        "label": "82.4 ns",
+        "n": 7,
+        "value": 82.361328125
+      }
+    ],
+    [
+      {
+        "high": 107.41464233398438,
+        "label": "107.2 ns",
+        "n": 7,
+        "value": 107.15472412109375
+      },
+      {
+        "high": 82.63619995117188,
+        "label": "81.9 ns",
+        "n": 7,
+        "value": 81.8623046875
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "key: time per operation (standard profile) \u2014 0.8 ns to 514.3 ns, page 1 of 3"
+}

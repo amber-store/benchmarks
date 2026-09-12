@@ -6,6 +6,9 @@ at `github.com/amber-store/core` and the Rust core at
 operation, through their library APIs**, with no process start inside any
 measured interval.
 
+Latest recorded results: [standard report](results/20260912T233829Z/standard/REPORT.md)
+and [run details](results/README.md). Both profiles ran on bld1.
+
 ```sh
 ./run.sh                      # quick profile: correctness first, ~25 s
 ./run.sh --profile standard   # the measurement profile

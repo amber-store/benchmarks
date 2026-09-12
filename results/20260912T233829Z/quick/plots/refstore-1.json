@@ -1,0 +1,125 @@
+{
+  "categories": [
+    "put_batch \u2014 records/sync-false [1t]",
+    "get \u2014 miss [1t]",
+    "put \u2014 records/sync-false [1t]",
+    "all \u2014 records [1t]",
+    "get \u2014 hit [1t]",
+    "delete \u2014 records [1t]",
+    "put \u2014 records/sync-true [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 100.645,
+        "label": "100.6 ns",
+        "n": 1,
+        "value": 100.645
+      },
+      {
+        "high": 1189.825,
+        "label": "1.190 us",
+        "n": 1,
+        "value": 1189.825
+      }
+    ],
+    [
+      {
+        "high": 220.975,
+        "label": "221.0 ns",
+        "n": 1,
+        "value": 220.975
+      },
+      {
+        "high": 322.115,
+        "label": "322.1 ns",
+        "n": 1,
+        "value": 322.115
+      }
+    ],
+    [
+      {
+        "high": 381.525,
+        "label": "381.5 ns",
+        "n": 1,
+        "value": 381.525
+      },
+      {
+        "high": 40186.165,
+        "label": "40.186 us",
+        "n": 1,
+        "value": 40186.165
+      }
+    ],
+    [
+      {
+        "high": 491.635,
+        "label": "491.6 ns",
+        "n": 1,
+        "value": 491.635
+      },
+      {
+        "high": 189.36,
+        "label": "189.4 ns",
+        "n": 1,
+        "value": 189.36
+      }
+    ],
+    [
+      {
+        "high": 1103.66,
+        "label": "1.104 us",
+        "n": 1,
+        "value": 1103.66
+      },
+      {
+        "high": 436.43,
+        "label": "436.4 ns",
+        "n": 1,
+        "value": 436.43
+      }
+    ],
+    [
+      {
+        "high": 1669.09,
+        "label": "1.669 us",
+        "n": 1,
+        "value": 1669.09
+      },
+      {
+        "high": 36458.245,
+        "label": "36.458 us",
+        "n": 1,
+        "value": 36458.245
+      }
+    ],
+    [
+      {
+        "high": 60816.675,
+        "label": "60.817 us",
+        "n": 1,
+        "value": 60816.675
+      },
+      {
+        "high": 39553.555,
+        "label": "39.554 us",
+        "n": 1,
+        "value": 39553.555
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "refstore: time per operation (quick profile) \u2014 100.6 ns to 60.817 us, page 1 of 2"
+}

@@ -1,0 +1,50 @@
+{
+  "categories": [
+    "ignored \u2014 nil-matcher [1t]",
+    "ignored \u2014 mixed-names [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 5.439453125,
+        "label": "5.4 ns",
+        "n": 1,
+        "value": 5.439453125
+      },
+      {
+        "high": 0.2158203125,
+        "label": "0.2 ns",
+        "n": 1,
+        "value": 0.2158203125
+      }
+    ],
+    [
+      {
+        "high": 205.8330078125,
+        "label": "205.8 ns",
+        "n": 1,
+        "value": 205.8330078125
+      },
+      {
+        "high": 111.443359375,
+        "label": "111.4 ns",
+        "n": 1,
+        "value": 111.443359375
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "amberignore: time per operation (quick profile) \u2014 0.2 ns to 205.8 ns, page 1 of 2"
+}

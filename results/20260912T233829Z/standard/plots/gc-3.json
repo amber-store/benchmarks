@@ -1,0 +1,110 @@
+{
+  "categories": [
+    "prepare_ref \u2014 tree-root/commit [8t]",
+    "prepare_ref \u2014 tree-root/abort [8t]",
+    "run \u2014 nothing-to-reclaim [8t]",
+    "status \u2014 mark+score [8t]",
+    "wipe \u2014 store-reset [8t]",
+    "run \u2014 reclaimable-packs [8t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 2883889.0,
+        "label": "2.833 ms",
+        "n": 7,
+        "value": 2833272.0
+      },
+      {
+        "high": 1724974.5,
+        "label": "1.713 ms",
+        "n": 7,
+        "value": 1713242.0
+      }
+    ],
+    [
+      {
+        "high": 2935467.5,
+        "label": "2.891 ms",
+        "n": 7,
+        "value": 2890772.0
+      },
+      {
+        "high": 1731778.0,
+        "label": "1.690 ms",
+        "n": 7,
+        "value": 1689888.0
+      }
+    ],
+    [
+      {
+        "high": 3832185.5,
+        "label": "3.763 ms",
+        "n": 7,
+        "value": 3762828.0
+      },
+      {
+        "high": 1658663.5,
+        "label": "1.617 ms",
+        "n": 7,
+        "value": 1616739.0
+      }
+    ],
+    [
+      {
+        "high": 5436730.5,
+        "label": "5.281 ms",
+        "n": 7,
+        "value": 5281348.0
+      },
+      {
+        "high": 4000948.0,
+        "label": "3.799 ms",
+        "n": 7,
+        "value": 3799177.0
+      }
+    ],
+    [
+      {
+        "high": 7084262.5,
+        "label": "6.599 ms",
+        "n": 7,
+        "value": 6598525.0
+      },
+      {
+        "high": 4942757.0,
+        "label": "4.931 ms",
+        "n": 7,
+        "value": 4930869.0
+      }
+    ],
+    [
+      {
+        "high": 15743238.5,
+        "label": "14.911 ms",
+        "n": 7,
+        "value": 14911254.0
+      },
+      {
+        "high": 12816177.0,
+        "label": "11.478 ms",
+        "n": 7,
+        "value": 11477595.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "gc: time per operation (standard profile) \u2014 1.617 ms to 14.911 ms, page 3 of 3"
+}

@@ -1,0 +1,50 @@
+{
+  "categories": [
+    "new_item_chunker \u2014 bits-4..12 [1t]",
+    "item_chunker \u2014 is_boundary/bits-7 [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 13.101996527777779,
+        "label": "13.1 ns",
+        "n": 1,
+        "value": 13.101996527777779
+      },
+      {
+        "high": 12.88064236111111,
+        "label": "12.9 ns",
+        "n": 1,
+        "value": 12.88064236111111
+      }
+    ],
+    [
+      {
+        "high": 78.55,
+        "label": "78.5 ns",
+        "n": 1,
+        "value": 78.55
+      },
+      {
+        "high": 30.71,
+        "label": "30.7 ns",
+        "n": 1,
+        "value": 30.71
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "chunkers: time per operation (quick profile) \u2014 12.9 ns to 78.5 ns, page 1 of 2"
+}

@@ -218,11 +218,20 @@ valid-looking report exists for an invalid run.
   this is the only latency figure that means anything.
 * CPU time per core operation: `(cpu_user_ns + cpu_sys_ns) / ops`.
 * Operations per second: `ops * 1e9 / wall_ns`.
-* Entries or objects per second: `dims.entries * 1e9 / wall_ns`, and likewise
-  for `dims.objects`.
+* Entry and object rates use `ops * 1e9 / wall_ns` for operations whose work units are entries or objects.
+  Tree shape alone does not imply processed work.
+* Scaling totals multiply each dimension by the recorded batch item count, when present.
+* `ops` counts logical work units. Node codecs count entries; ingest counts files; individual store requests count objects.
 * Byte rate: `bytes * 1e9 / wall_ns`, labelled with `bytes_kind`.
 * Relative variation: the median absolute deviation over the repetitions,
   divided by the median.
 
 The report never reads a number another program summarised; it recomputes
 each of these from the raw samples.
+
+The report records `report_generator_sha256` separately from the measured harness identity.
+This permits corrected post-processing without changing recorded measurements.
+
+Each pass must pass the same correctness checks. Comparable digests must match across passes.
+Local diagnostic counts can vary with physical segment layout.
+The original per-pass documents retain those diagnostic values.

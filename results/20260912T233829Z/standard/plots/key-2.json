@@ -1,0 +1,110 @@
+{
+  "categories": [
+    "new \u2014 4KiB-duplicate [1t]",
+    "new \u2014 4KiB-random [1t]",
+    "new \u2014 4KiB-text [1t]",
+    "new \u2014 1MiB-duplicate [1t]",
+    "new \u2014 1MiB-text [1t]",
+    "new \u2014 1MiB-random [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 1778.952392578125,
+        "label": "1.762 us",
+        "n": 7,
+        "value": 1761.94970703125
+      },
+      {
+        "high": 1072.803466796875,
+        "label": "1.070 us",
+        "n": 7,
+        "value": 1069.63134765625
+      }
+    ],
+    [
+      {
+        "high": 1802.25634765625,
+        "label": "1.785 us",
+        "n": 7,
+        "value": 1785.2900390625
+      },
+      {
+        "high": 1070.885986328125,
+        "label": "1.070 us",
+        "n": 7,
+        "value": 1069.72900390625
+      }
+    ],
+    [
+      {
+        "high": 1841.958740234375,
+        "label": "1.799 us",
+        "n": 7,
+        "value": 1798.7880859375
+      },
+      {
+        "high": 1074.9658203125,
+        "label": "1.073 us",
+        "n": 7,
+        "value": 1073.37353515625
+      }
+    ],
+    [
+      {
+        "high": 190941.625,
+        "label": "190.315 us",
+        "n": 7,
+        "value": 190314.75
+      },
+      {
+        "high": 144444.0,
+        "label": "132.571 us",
+        "n": 7,
+        "value": 132570.75
+      }
+    ],
+    [
+      {
+        "high": 192427.625,
+        "label": "192.216 us",
+        "n": 7,
+        "value": 192216.0
+      },
+      {
+        "high": 123167.125,
+        "label": "122.753 us",
+        "n": 7,
+        "value": 122753.25
+      }
+    ],
+    [
+      {
+        "high": 220006.4375,
+        "label": "192.488 us",
+        "n": 7,
+        "value": 192487.625
+      },
+      {
+        "high": 127948.125,
+        "label": "120.894 us",
+        "n": 7,
+        "value": 120893.5
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "key: time per operation (standard profile) \u2014 1.070 us to 192.488 us, page 2 of 3"
+}

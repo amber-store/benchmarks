@@ -1,0 +1,185 @@
+{
+  "categories": [
+    "validate \u2014 canonical [1t]",
+    "accessors \u2014 type+length+length_size+hash [1t]",
+    "type_string \u2014 names [1t]",
+    "parse \u2014 canonical [1t]",
+    "new_from_hash \u2014 batch [1t]",
+    "parse \u2014 malformed [1t]",
+    "string \u2014 hex [1t]",
+    "new \u2014 tiny-64B-random [1t]",
+    "new \u2014 tiny-64B-duplicate [1t]",
+    "new \u2014 tiny-64B-text [1t]",
+    "new \u2014 empty [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 7.365,
+        "label": "7.4 ns",
+        "n": 1,
+        "value": 7.365
+      },
+      {
+        "high": 1.155,
+        "label": "1.2 ns",
+        "n": 1,
+        "value": 1.155
+      }
+    ],
+    [
+      {
+        "high": 13.38875,
+        "label": "13.4 ns",
+        "n": 1,
+        "value": 13.38875
+      },
+      {
+        "high": 9.2175,
+        "label": "9.2 ns",
+        "n": 1,
+        "value": 9.2175
+      }
+    ],
+    [
+      {
+        "high": 14.08,
+        "label": "14.1 ns",
+        "n": 1,
+        "value": 14.08
+      },
+      {
+        "high": 15.73,
+        "label": "15.7 ns",
+        "n": 1,
+        "value": 15.73
+      }
+    ],
+    [
+      {
+        "high": 39.17,
+        "label": "39.2 ns",
+        "n": 1,
+        "value": 39.17
+      },
+      {
+        "high": 27.1,
+        "label": "27.1 ns",
+        "n": 1,
+        "value": 27.1
+      }
+    ],
+    [
+      {
+        "high": 42.98,
+        "label": "43.0 ns",
+        "n": 1,
+        "value": 42.98
+      },
+      {
+        "high": 36.07,
+        "label": "36.1 ns",
+        "n": 1,
+        "value": 36.07
+      }
+    ],
+    [
+      {
+        "high": 66.240234375,
+        "label": "66.2 ns",
+        "n": 1,
+        "value": 66.240234375
+      },
+      {
+        "high": 1.0078125,
+        "label": "1.0 ns",
+        "n": 1,
+        "value": 1.0078125
+      }
+    ],
+    [
+      {
+        "high": 94.43,
+        "label": "94.4 ns",
+        "n": 1,
+        "value": 94.43
+      },
+      {
+        "high": 464.435,
+        "label": "464.4 ns",
+        "n": 1,
+        "value": 464.435
+      }
+    ],
+    [
+      {
+        "high": 106.7750244140625,
+        "label": "106.8 ns",
+        "n": 1,
+        "value": 106.7750244140625
+      },
+      {
+        "high": 86.5361328125,
+        "label": "86.5 ns",
+        "n": 1,
+        "value": 86.5361328125
+      }
+    ],
+    [
+      {
+        "high": 108.180908203125,
+        "label": "108.2 ns",
+        "n": 1,
+        "value": 108.180908203125
+      },
+      {
+        "high": 84.01971435546875,
+        "label": "84.0 ns",
+        "n": 1,
+        "value": 84.01971435546875
+      }
+    ],
+    [
+      {
+        "high": 108.99359130859375,
+        "label": "109.0 ns",
+        "n": 1,
+        "value": 108.99359130859375
+      },
+      {
+        "high": 86.4505615234375,
+        "label": "86.5 ns",
+        "n": 1,
+        "value": 86.4505615234375
+      }
+    ],
+    [
+      {
+        "high": 113.17875,
+        "label": "113.2 ns",
+        "n": 1,
+        "value": 113.17875
+      },
+      {
+        "high": 79.13875,
+        "label": "79.1 ns",
+        "n": 1,
+        "value": 79.13875
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "key: time per operation (quick profile) \u2014 1.0 ns to 464.4 ns, page 1 of 3"
+}

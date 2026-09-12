@@ -1,0 +1,124 @@
+{
+  "categories": [
+    "discard \u2014 packs [4t]",
+    "commit \u2014 packs/duplicate [4t]",
+    "open \u2014 sweeps-staged-tmp-files [4t]",
+    "open \u2014 empty [4t]",
+    "stage \u2014 packs [4t]",
+    "drain \u2014 packs/new [4t]",
+    "close \u2014 drained [4t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 20138.375,
+        "label": "20.138 us",
+        "n": 1,
+        "value": 20138.375
+      },
+      {
+        "high": 18735.75,
+        "label": "18.736 us",
+        "n": 1,
+        "value": 18735.75
+      }
+    ],
+    [
+      {
+        "high": 20510.375,
+        "label": "20.510 us",
+        "n": 1,
+        "value": 20510.375
+      },
+      {
+        "high": 21283.125,
+        "label": "21.283 us",
+        "n": 1,
+        "value": 21283.125
+      }
+    ],
+    [
+      {
+        "high": 22857.5,
+        "label": "22.858 us",
+        "n": 1,
+        "value": 22857.5
+      },
+      {
+        "high": 27656.625,
+        "label": "27.657 us",
+        "n": 1,
+        "value": 27656.625
+      }
+    ],
+    [
+      {
+        "high": 65585.0,
+        "label": "65.585 us",
+        "n": 1,
+        "value": 65585.0
+      },
+      {
+        "high": 84231.0,
+        "label": "84.231 us",
+        "n": 1,
+        "value": 84231.0
+      }
+    ],
+    [
+      {
+        "high": 199155.375,
+        "label": "199.155 us",
+        "n": 1,
+        "value": 199155.375
+      },
+      {
+        "high": 183064.625,
+        "label": "183.065 us",
+        "n": 1,
+        "value": 183064.625
+      }
+    ],
+    [
+      {
+        "high": 318093.875,
+        "label": "318.094 us",
+        "n": 1,
+        "value": 318093.875
+      },
+      {
+        "high": 281259.75,
+        "label": "281.260 us",
+        "n": 1,
+        "value": 281259.75
+      }
+    ],
+    [
+      {
+        "high": 648609.0,
+        "label": "648.609 us",
+        "n": 1,
+        "value": 648609.0
+      },
+      {
+        "high": 1613723.0,
+        "label": "1.614 ms",
+        "n": 1,
+        "value": 1613723.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "inbox: time per operation (quick profile)"
+}

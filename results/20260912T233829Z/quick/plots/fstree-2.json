@@ -1,0 +1,320 @@
+{
+  "categories": [
+    "decode_dir_node \u2014 pairs-128 [1t]",
+    "encode_dir_leaf \u2014 entries-128-with-xattrs [1t]",
+    "decode_dir_node \u2014 pairs-1024 [1t]",
+    "encode_dir_leaf \u2014 entries-128-partial-change [1t]",
+    "decode_dir_node \u2014 pairs-8 [1t]",
+    "index_builder_file \u2014 children-128 [1t]",
+    "reachable_keys \u2014 width-40000 [auto]",
+    "encode_dir_leaf \u2014 entries-8 [1t]",
+    "decode_dir_leaf \u2014 entries-128 [1t]",
+    "decode_dir_leaf \u2014 entries-1024 [1t]",
+    "collect_entries \u2014 width-4096 [1t]",
+    "decode_dir_leaf \u2014 entries-128-with-xattrs [1t]",
+    "decode_dir_leaf \u2014 entries-8 [1t]",
+    "decode_dir_leaf \u2014 entries-128-partial-change [1t]",
+    "collect_entries \u2014 width-256 [1t]",
+    "check_complete \u2014 widest/jobs-N [4t]",
+    "dir_builder \u2014 entries-4096 [1t]",
+    "reachable_keys \u2014 width-256 [auto]",
+    "encode_xattr_set \u2014 xattrs-64 [1t]",
+    "dir_builder \u2014 entries-40000 [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 168.0040283203125,
+        "label": "168.0 ns",
+        "n": 1,
+        "value": 168.0040283203125
+      },
+      {
+        "high": 98.518310546875,
+        "label": "98.5 ns",
+        "n": 1,
+        "value": 98.518310546875
+      }
+    ],
+    [
+      {
+        "high": 174.5277099609375,
+        "label": "174.5 ns",
+        "n": 1,
+        "value": 174.5277099609375
+      },
+      {
+        "high": 68.60400390625,
+        "label": "68.6 ns",
+        "n": 1,
+        "value": 68.60400390625
+      }
+    ],
+    [
+      {
+        "high": 175.43032836914062,
+        "label": "175.4 ns",
+        "n": 1,
+        "value": 175.43032836914062
+      },
+      {
+        "high": 96.89117431640625,
+        "label": "96.9 ns",
+        "n": 1,
+        "value": 96.89117431640625
+      }
+    ],
+    [
+      {
+        "high": 177.0838623046875,
+        "label": "177.1 ns",
+        "n": 1,
+        "value": 177.0838623046875
+      },
+      {
+        "high": 66.366943359375,
+        "label": "66.4 ns",
+        "n": 1,
+        "value": 66.366943359375
+      }
+    ],
+    [
+      {
+        "high": 189.150390625,
+        "label": "189.2 ns",
+        "n": 1,
+        "value": 189.150390625
+      },
+      {
+        "high": 87.7265625,
+        "label": "87.7 ns",
+        "n": 1,
+        "value": 87.7265625
+      }
+    ],
+    [
+      {
+        "high": 220.890625,
+        "label": "220.9 ns",
+        "n": 1,
+        "value": 220.890625
+      },
+      {
+        "high": 70.6015625,
+        "label": "70.6 ns",
+        "n": 1,
+        "value": 70.6015625
+      }
+    ],
+    [
+      {
+        "high": 227.55967906202648,
+        "label": "227.6 ns",
+        "n": 1,
+        "value": 227.55967906202648
+      },
+      {
+        "high": 108.75234120774027,
+        "label": "108.8 ns",
+        "n": 1,
+        "value": 108.75234120774027
+      }
+    ],
+    [
+      {
+        "high": 248.873046875,
+        "label": "248.9 ns",
+        "n": 1,
+        "value": 248.873046875
+      },
+      {
+        "high": 132.166015625,
+        "label": "132.2 ns",
+        "n": 1,
+        "value": 132.166015625
+      }
+    ],
+    [
+      {
+        "high": 361.43505859375,
+        "label": "361.4 ns",
+        "n": 1,
+        "value": 361.43505859375
+      },
+      {
+        "high": 212.428466796875,
+        "label": "212.4 ns",
+        "n": 1,
+        "value": 212.428466796875
+      }
+    ],
+    [
+      {
+        "high": 365.75697326660156,
+        "label": "365.8 ns",
+        "n": 1,
+        "value": 365.75697326660156
+      },
+      {
+        "high": 213.4107666015625,
+        "label": "213.4 ns",
+        "n": 1,
+        "value": 213.4107666015625
+      }
+    ],
+    [
+      {
+        "high": 367.440185546875,
+        "label": "367.4 ns",
+        "n": 1,
+        "value": 367.440185546875
+      },
+      {
+        "high": 215.4140625,
+        "label": "215.4 ns",
+        "n": 1,
+        "value": 215.4140625
+      }
+    ],
+    [
+      {
+        "high": 369.587890625,
+        "label": "369.6 ns",
+        "n": 1,
+        "value": 369.587890625
+      },
+      {
+        "high": 221.885009765625,
+        "label": "221.9 ns",
+        "n": 1,
+        "value": 221.885009765625
+      }
+    ],
+    [
+      {
+        "high": 375.58203125,
+        "label": "375.6 ns",
+        "n": 1,
+        "value": 375.58203125
+      },
+      {
+        "high": 216.33203125,
+        "label": "216.3 ns",
+        "n": 1,
+        "value": 216.33203125
+      }
+    ],
+    [
+      {
+        "high": 383.3568115234375,
+        "label": "383.4 ns",
+        "n": 1,
+        "value": 383.3568115234375
+      },
+      {
+        "high": 223.256103515625,
+        "label": "223.3 ns",
+        "n": 1,
+        "value": 223.256103515625
+      }
+    ],
+    [
+      {
+        "high": 392.078125,
+        "label": "392.1 ns",
+        "n": 1,
+        "value": 392.078125
+      },
+      {
+        "high": 216.0390625,
+        "label": "216.0 ns",
+        "n": 1,
+        "value": 216.0390625
+      }
+    ],
+    [
+      {
+        "high": 448.15197356981395,
+        "label": "448.2 ns",
+        "n": 1,
+        "value": 448.15197356981395
+      },
+      {
+        "high": 168.0008197332141,
+        "label": "168.0 ns",
+        "n": 1,
+        "value": 168.0008197332141
+      }
+    ],
+    [
+      {
+        "high": 485.11865234375,
+        "label": "485.1 ns",
+        "n": 1,
+        "value": 485.11865234375
+      },
+      {
+        "high": 308.4677734375,
+        "label": "308.5 ns",
+        "n": 1,
+        "value": 308.4677734375
+      }
+    ],
+    [
+      {
+        "high": 485.4826254826255,
+        "label": "485.5 ns",
+        "n": 1,
+        "value": 485.4826254826255
+      },
+      {
+        "high": 700.2162162162163,
+        "label": "700.2 ns",
+        "n": 1,
+        "value": 700.2162162162163
+      }
+    ],
+    [
+      {
+        "high": 488.843994140625,
+        "label": "488.8 ns",
+        "n": 1,
+        "value": 488.843994140625
+      },
+      {
+        "high": 99.947021484375,
+        "label": "99.9 ns",
+        "n": 1,
+        "value": 99.947021484375
+      }
+    ],
+    [
+      {
+        "high": 507.1771,
+        "label": "507.2 ns",
+        "n": 1,
+        "value": 507.1771
+      },
+      {
+        "high": 320.6097,
+        "label": "320.6 ns",
+        "n": 1,
+        "value": 320.6097
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "fstree: time per operation (quick profile) \u2014 66.4 ns to 700.2 ns, page 2 of 5"
+}

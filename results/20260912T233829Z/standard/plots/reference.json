@@ -1,0 +1,94 @@
+{
+  "categories": [
+    "validate_name \u2014 valid [1t]",
+    "validate_user \u2014 valid [1t]",
+    "signature_payload \u2014 signed [1t]",
+    "encode \u2014 signed [1t]",
+    "decode \u2014 signed [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 58.25390625,
+        "label": "57.0 ns",
+        "n": 7,
+        "value": 57.0234375
+      },
+      {
+        "high": 29.587890625,
+        "label": "29.5 ns",
+        "n": 7,
+        "value": 29.51171875
+      }
+    ],
+    [
+      {
+        "high": 79.134765625,
+        "label": "75.1 ns",
+        "n": 7,
+        "value": 75.10546875
+      },
+      {
+        "high": 98.48828125,
+        "label": "90.1 ns",
+        "n": 7,
+        "value": 90.09375
+      }
+    ],
+    [
+      {
+        "high": 288.775390625,
+        "label": "267.5 ns",
+        "n": 7,
+        "value": 267.54296875
+      },
+      {
+        "high": 172.578125,
+        "label": "171.7 ns",
+        "n": 7,
+        "value": 171.6953125
+      }
+    ],
+    [
+      {
+        "high": 289.02734375,
+        "label": "277.8 ns",
+        "n": 7,
+        "value": 277.796875
+      },
+      {
+        "high": 168.91796875,
+        "label": "167.9 ns",
+        "n": 7,
+        "value": 167.859375
+      }
+    ],
+    [
+      {
+        "high": 872.64453125,
+        "label": "863.0 ns",
+        "n": 7,
+        "value": 863.015625
+      },
+      {
+        "high": 447.76953125,
+        "label": "430.9 ns",
+        "n": 7,
+        "value": 430.94140625
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 7 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "reference: time per operation (standard profile)"
+}

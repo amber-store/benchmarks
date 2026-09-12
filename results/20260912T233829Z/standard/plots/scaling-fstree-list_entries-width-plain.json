@@ -1,0 +1,71 @@
+{
+  "categories": [
+    "16",
+    "256",
+    "4,096",
+    "40,000"
+  ],
+  "cells": [
+    [
+      {
+        "label": "557.3 ns (557.3 ns/op)",
+        "n": 7,
+        "value": 557.3125
+      },
+      {
+        "label": "221.0 ns (221.0 ns/op)",
+        "n": 7,
+        "value": 221.0
+      }
+    ],
+    [
+      {
+        "label": "657.6 ns (657.6 ns/op)",
+        "n": 7,
+        "value": 657.5859375
+      },
+      {
+        "label": "399.2 ns (399.2 ns/op)",
+        "n": 7,
+        "value": 399.1640625
+      }
+    ],
+    [
+      {
+        "label": "1.151 us (1.151 us/op)",
+        "n": 7,
+        "value": 1151.498779296875
+      },
+      {
+        "label": "690.2 ns (690.2 ns/op)",
+        "n": 7,
+        "value": 690.19775390625
+      }
+    ],
+    [
+      {
+        "label": "1.357 us (1.357 us/op)",
+        "n": 7,
+        "value": 1357.24765
+      },
+      {
+        "label": "810.8 ns (810.8 ns/op)",
+        "n": 7,
+        "value": 810.8091
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 7 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Cost per unit of directory width: the whole measured call divided by that dimension's total over the call. Flat means proportional; falling means fixed overhead dominated the small end.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710. The bracketed figure is the batch-normalised latency of one operation."
+  ],
+  "title": "fstree.list_entries: scaling with directory width, plain content (standard profile)"
+}

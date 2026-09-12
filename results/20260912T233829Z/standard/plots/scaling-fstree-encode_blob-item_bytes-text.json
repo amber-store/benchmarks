@@ -1,0 +1,71 @@
+{
+  "categories": [
+    "64",
+    "4,096",
+    "1,048,576",
+    "8,388,608"
+  ],
+  "cells": [
+    [
+      {
+        "label": "2.1 ns (135.4 ns/op)",
+        "n": 7,
+        "value": 2.11617374420166
+      },
+      {
+        "label": "1.7 ns (108.4 ns/op)",
+        "n": 7,
+        "value": 1.694138526916504
+      }
+    ],
+    [
+      {
+        "label": "0.5 ns (1.916 us/op)",
+        "n": 7,
+        "value": 0.46774816513061523
+      },
+      {
+        "label": "0.3 ns (1.127 us/op)",
+        "n": 7,
+        "value": 0.275193452835083
+      }
+    ],
+    [
+      {
+        "label": "0.2 ns (205.398 us/op)",
+        "n": 7,
+        "value": 0.19588232040405273
+      },
+      {
+        "label": "0.1 ns (135.251 us/op)",
+        "n": 7,
+        "value": 0.12898540496826172
+      }
+    ],
+    [
+      {
+        "label": "0.2 ns (1.524 ms/op)",
+        "n": 7,
+        "value": 0.18164169788360596
+      },
+      {
+        "label": "0.1 ns (1.119 ms/op)",
+        "n": 7,
+        "value": 0.1333554983139038
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 7 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Cost per unit of object size (bytes): the whole measured call divided by that dimension's total over the call. Flat means proportional; falling means fixed overhead dominated the small end.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710. The bracketed figure is the batch-normalised latency of one operation."
+  ],
+  "title": "fstree.encode_blob: scaling with object size (bytes), text content (standard profile)"
+}

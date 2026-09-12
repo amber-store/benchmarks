@@ -1,0 +1,49 @@
+{
+  "categories": [
+    "write \u2014 fixture-tree [1t]",
+    "extract \u2014 fixture-tree [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 2593.1313432835823,
+        "label": "2.593 us",
+        "n": 1,
+        "value": 2593.1313432835823
+      },
+      {
+        "high": 3438.4507462686565,
+        "label": "3.438 us",
+        "n": 1,
+        "value": 3438.4507462686565
+      }
+    ],
+    [
+      {
+        "high": 40966.49850746269,
+        "label": "40.966 us",
+        "n": 1,
+        "value": 40966.49850746269
+      },
+      {
+        "high": 36819.17014925373,
+        "label": "36.819 us",
+        "n": 1,
+        "value": 36819.17014925373
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "tar: time per operation (quick profile)"
+}

@@ -1,0 +1,95 @@
+{
+  "categories": [
+    "close \u2014 idle [4t]",
+    "prepare_ref \u2014 missing-root [4t]",
+    "open \u2014 populated [4t]",
+    "why \u2014 live-root [4t]",
+    "run \u2014 nothing-to-reclaim [4t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 290.0,
+        "label": "290.0 ns",
+        "n": 1,
+        "value": 290.0
+      },
+      {
+        "high": 1152.0,
+        "label": "1.152 us",
+        "n": 1,
+        "value": 1152.0
+      }
+    ],
+    [
+      {
+        "high": 2397.703125,
+        "label": "2.398 us",
+        "n": 1,
+        "value": 2397.703125
+      },
+      {
+        "high": 143.40625,
+        "label": "143.4 ns",
+        "n": 1,
+        "value": 143.40625
+      }
+    ],
+    [
+      {
+        "high": 45056.0,
+        "label": "45.056 us",
+        "n": 1,
+        "value": 45056.0
+      },
+      {
+        "high": 31410.0,
+        "label": "31.410 us",
+        "n": 1,
+        "value": 31410.0
+      }
+    ],
+    [
+      {
+        "high": 45687.0,
+        "label": "45.687 us",
+        "n": 1,
+        "value": 45687.0
+      },
+      {
+        "high": 5590.0,
+        "label": "5.590 us",
+        "n": 1,
+        "value": 5590.0
+      }
+    ],
+    [
+      {
+        "high": 223097.0,
+        "label": "223.097 us",
+        "n": 1,
+        "value": 223097.0
+      },
+      {
+        "high": 181607.0,
+        "label": "181.607 us",
+        "n": 1,
+        "value": 181607.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "gc: time per operation (quick profile) \u2014 143.4 ns to 223.097 us, page 2 of 3"
+}
