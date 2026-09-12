@@ -302,6 +302,10 @@ func cborCases(e *Env) []Case {
 	// The Rust core additionally exports the CBOR head/bstr primitives
 	// (`append_head`, `read_head`, `append_bstr`, `read_bstr`); the Go core
 	// keeps them unexported inside cborx, so there is nothing to call here.
+	// The grouped operation id the Rust driver measures them under is
+	// declared too, so the report can bind its Rust-only case to a
+	// declaration rather than infer one.
+	e.skip("cbor.head_primitives", "", "Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public")
 	e.skip("cbor.append_head", "", "Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public")
 	e.skip("cbor.read_head", "", "Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public")
 	e.skip("cbor.append_bstr", "", "Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public")

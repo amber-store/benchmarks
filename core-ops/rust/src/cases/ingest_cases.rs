@@ -11,7 +11,7 @@ use amber_store_core::packstore;
 use crate::env::Env;
 use crate::fixtures::{
     MemStore, TreeCounts, digest_strings, first_difference, fold_bool, fold_i64, fold_key,
-    fold_u64, manifest_lines, new_fold,
+    fold_u64, jobs_label, manifest_lines, new_fold,
 };
 use crate::fixtures_build::store_options;
 use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
@@ -255,6 +255,10 @@ pub fn ingest_cases(env: &Env) -> Vec<Case> {
     };
 
     for jobs in [p.threads_single, p.threads_multi] {
+        // The label names the *kind* of worker count, not the number: the
+        // number is a profile setting and lives in the sample's dimensions,
+        // so one coverage manifest describes every profile.
+        let label = jobs_label(jobs);
         // Scan walks directory entries and stats inodes; it never opens a
         // file body. Its byte figure is therefore the logical size of the
         // tree it covered, not bandwidth, and is labelled as such.
@@ -262,7 +266,7 @@ pub fn ingest_cases(env: &Env) -> Vec<Case> {
             Case::new(
                 "ingest",
                 "ingest.scan",
-                &format!("filtered/jobs-{jobs}"),
+                &format!("filtered/{label}"),
                 jobs,
                 fx.v1_included.files as usize,
                 Box::new(|_| Box::new(()) as State),
@@ -279,7 +283,7 @@ pub fn ingest_cases(env: &Env) -> Vec<Case> {
             Case::new(
                 "ingest",
                 "ingest.objects",
-                &format!("tree/jobs-{jobs}"),
+                &format!("tree/{label}"),
                 jobs,
                 fx.v1_included.files as usize,
                 Box::new(|_| Box::new(()) as State),
@@ -308,7 +312,7 @@ pub fn ingest_cases(env: &Env) -> Vec<Case> {
             Case::new(
                 "ingest",
                 "ingest.dir",
-                &format!("tree/fresh-store/jobs-{jobs}"),
+                &format!("tree/fresh-store/{label}"),
                 jobs,
                 fx.v1_included.files as usize,
                 Box::new(|env| Box::new(fresh_store(env, "ingest-dir")) as State),
@@ -337,7 +341,7 @@ pub fn ingest_cases(env: &Env) -> Vec<Case> {
             Case::new(
                 "ingest",
                 "ingest.dir",
-                &format!("tree/incremental-change/jobs-{jobs}"),
+                &format!("tree/incremental-change/{label}"),
                 jobs,
                 fx.v2_included.files as usize,
                 Box::new(|env| {
@@ -369,7 +373,7 @@ pub fn ingest_cases(env: &Env) -> Vec<Case> {
             Case::new(
                 "ingest",
                 "ingest.dir",
-                &format!("tree/unchanged-repeat/jobs-{jobs}"),
+                &format!("tree/unchanged-repeat/{label}"),
                 jobs,
                 fx.v1_included.files as usize,
                 Box::new(|env| {

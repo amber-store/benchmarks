@@ -543,7 +543,7 @@ func fstreeCases(e *Env) []Case {
 		jobs := jobs
 		out = append(out, Case{
 			Group: "fstree", Op: "fstree.check_complete",
-			Workload: fmt.Sprintf("widest/jobs-%d", jobs), Threads: jobs, Ops: int(widest.Objects),
+			Workload: "widest/" + jobsLabel(jobs), Threads: jobs, Ops: int(widest.Objects),
 			Dims: Dims{Entries: int64(widest.Entries), Width: int64(widest.Entries),
 				Objects: widest.Objects, Shape: "wide", Content: "structured"},
 			CrossChecksum: true,

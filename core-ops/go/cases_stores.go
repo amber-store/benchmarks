@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/amber-store/core/amberpack"
 	"github.com/amber-store/core/inbox"
@@ -108,7 +109,7 @@ func refstoreCases(e *Env) []Case {
 		sync := sync
 		out = append(out, Case{
 			Group: "refstore", Op: "refstore.put",
-			Workload: fmt.Sprintf("records-%d/sync-%v", n, sync), Threads: 1,
+			Workload: fmt.Sprintf("records/sync-%v", sync), Threads: 1,
 			Ops:    n,
 			Dims:   Dims{Entries: int64(n), Items: int64(n), Content: "structured"},
 			PerRep: true,
@@ -131,7 +132,7 @@ func refstoreCases(e *Env) []Case {
 	out = append(out,
 		Case{
 			Group: "refstore", Op: "refstore.put_batch",
-			Workload: fmt.Sprintf("records-%d/sync-false", n), Threads: 1, Ops: n,
+			Workload: "records/sync-false", Threads: 1, Ops: n,
 			Dims:   Dims{Entries: int64(n), Items: int64(n), Content: "structured"},
 			PerRep: true,
 			Setup:  func(en *Env) any { return freshRefs(en, "rs-batch", false) },
@@ -177,7 +178,7 @@ func refstoreCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*refHandle).close() },
 		},
 		Case{
-			Group: "refstore", Op: "refstore.all", Workload: fmt.Sprintf("records-%d", n), Threads: 1,
+			Group: "refstore", Op: "refstore.all", Workload: "records", Threads: 1,
 			Ops:   n,
 			Dims:  Dims{Entries: int64(n), Items: 1, Content: "structured"},
 			Setup: func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-all", false) },
@@ -196,7 +197,7 @@ func refstoreCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*refHandle).close() },
 		},
 		Case{
-			Group: "refstore", Op: "refstore.delete", Workload: fmt.Sprintf("records-%d", n), Threads: 1,
+			Group: "refstore", Op: "refstore.delete", Workload: "records", Threads: 1,
 			Ops:    n,
 			Dims:   Dims{Entries: int64(n), Items: int64(n), Content: "structured"},
 			PerRep: true,
@@ -216,7 +217,7 @@ func refstoreCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*refHandle).close() },
 		},
 		Case{
-			Group: "refstore", Op: "refstore.wipe", Workload: fmt.Sprintf("records-%d", n), Threads: 1,
+			Group: "refstore", Op: "refstore.wipe", Workload: "records", Threads: 1,
 			Ops:    1,
 			Dims:   Dims{Entries: int64(n), Items: 1, Content: "structured"},
 			PerRep: true,
@@ -243,6 +244,32 @@ const fxRefProbe = "bench/ref/000000"
 
 func refstoreChecks(e *Env) {
 	fx := e.fx
+
+	// Open and close had no correctness evidence: a timing of "open a
+	// store" says nothing unless the store is usable afterwards, and a
+	// timing of "close a store" says nothing unless what was committed is
+	// still there. Write, close, reopen, read back.
+	rdir := workDir(e, "check-refs-reopen")
+	defer os.RemoveAll(rdir)
+	rs := mustV(refstore.Open(rdir, false))
+	must(rs.PutBatch(fx.RefBatch[:minInt(64, len(fx.RefBatch))]))
+	must(rs.Close())
+	rs = mustV(refstore.Open(rdir, false))
+	reopenOK := true
+	var reopenDetail string
+	for _, rec := range fx.RefBatch[:minInt(64, len(fx.RefBatch))] {
+		got, gerr := rs.Get(rec.Name)
+		if gerr != nil || !bytes.Equal(got, rec.Data) {
+			reopenOK = false
+			reopenDetail = fmt.Sprintf("%s: %v", rec.Name, gerr)
+			break
+		}
+	}
+	e.want("refstore", "refstore.close", "refstore/reopen-sees-committed-records", reopenOK,
+		"a record committed before the close was not there after the reopen: "+reopenDetail,
+		fmt.Sprintf("n=%d", minInt(64, len(fx.RefBatch))))
+	must(rs.Close())
+
 	h := copiedRefs(e, fx.RefsTemplate, "check-refs", false)
 	defer h.close()
 	st := h.st
@@ -325,9 +352,17 @@ func (s *inboxState) close() {
 }
 
 func newInbox(e *Env, name string, workers int) *inboxState {
+	return newInboxWithGate(e, name, workers)
+}
+
+// newInboxWithGate is newInbox with the Go core's functional options. The
+// Rust inbox has no options parameter, so only the Go-side gate check uses
+// this; every measured case goes through newInbox and is therefore the same
+// call on both sides.
+func newInboxWithGate(e *Env, name string, workers int, opts ...inbox.Option) *inboxState {
 	st := freshStore(e, name+"-store")
 	dir := workDir(e, name)
-	ib, err := inbox.Open(dir, st.st, workers, nil)
+	ib, err := inbox.Open(dir, st.st, workers, nil, opts...)
 	must(err)
 	return &inboxState{dir: dir, store: st, ib: ib}
 }
@@ -401,7 +436,7 @@ func inboxCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
 		Case{
-			Group: "inbox", Op: "inbox.stage", Workload: fmt.Sprintf("packs-%d", p.InboxPacks),
+			Group: "inbox", Op: "inbox.stage", Workload: "packs",
 			Threads: p.ThreadsMulti, Ops: p.InboxPacks, Bytes: fx.InboxLogicalBytes, BytesKind: BytesPayload,
 			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
 			PerRep: true,
@@ -418,7 +453,7 @@ func inboxCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
 		Case{
-			Group: "inbox", Op: "inbox.discard", Workload: fmt.Sprintf("packs-%d", p.InboxPacks),
+			Group: "inbox", Op: "inbox.discard", Workload: "packs",
 			Threads: p.ThreadsMulti, Ops: p.InboxPacks,
 			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
 			PerRep: true,
@@ -441,7 +476,7 @@ func inboxCases(e *Env) []Case {
 		// Commit plus the wait is the end-to-end drain: the workers store
 		// every pack's objects into the packstore.
 		Case{
-			Group: "inbox", Op: "inbox.drain", Workload: fmt.Sprintf("packs-%d/new", p.InboxPacks),
+			Group: "inbox", Op: "inbox.drain", Workload: "packs/new",
 			Threads: p.ThreadsMulti, Ops: p.InboxPacks, Bytes: fx.InboxLogicalBytes, BytesKind: BytesPayload,
 			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
 			PerRep: true,
@@ -469,7 +504,7 @@ func inboxCases(e *Env) []Case {
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
 		Case{
-			Group: "inbox", Op: "inbox.commit", Workload: fmt.Sprintf("packs-%d/duplicate", p.InboxPacks),
+			Group: "inbox", Op: "inbox.commit", Workload: "packs/duplicate",
 			Threads: p.ThreadsMulti, Ops: p.InboxPacks,
 			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
 			PerRep: true,
@@ -605,6 +640,87 @@ func inboxChecks(e *Env) {
 	// WaitFor on an unknown root returns immediately.
 	is.ib.WaitFor(fx.StoreMissKeys[0])
 	e.pass("inbox", "inbox.wait_for", "inbox/wait-for-empty-group", "returns")
+
+	// Open had no correctness evidence either. Its documented contract is
+	// that a staged-but-uncommitted body left behind by a previous run is
+	// swept when the inbox is opened again, so a crash between stage and
+	// commit cannot accumulate garbage.
+	sweep := newInbox(e, "check-inbox-sweep", e.Profile.ThreadsMulti)
+	defer sweep.close()
+	stale, _, _, serr := sweep.ib.Stage(meta, bytes.NewReader(fx.InboxPacks[0]))
+	must(serr)
+	must(sweep.ib.Close())
+	sweep.ib = nil
+	_, before := os.Stat(stale)
+	reopened, oerr := inbox.Open(sweep.dir, sweep.store.st, e.Profile.ThreadsMulti, nil)
+	must(oerr)
+	sweep.ib = reopened
+	_, after := os.Stat(stale)
+	e.want("inbox", "inbox.open", "inbox/open-sweeps-staged-tmp-files",
+		before == nil && os.IsNotExist(after),
+		fmt.Sprintf("the staged body was %v before the reopen and %v after",
+			before == nil, after == nil), "swept")
+
+	// Close retires the workers after the entries they were given have been
+	// drained: everything committed before the close is in the store, and
+	// the inbox directory is left with nothing to sweep.
+	fin := newInbox(e, "check-inbox-close", e.Profile.ThreadsMulti)
+	defer fin.close()
+	fin.stageAll(e.fx)
+	for i, tmp := range fin.tmps {
+		_, cerr := fin.ib.Commit(tmp, fin.hashes[i], fx.InboxRoots[i])
+		must(cerr)
+	}
+	for _, root := range fx.InboxRoots {
+		fin.ib.WaitFor(root)
+	}
+	must(fin.ib.Close())
+	fin.ib = nil
+	drained := 0
+	for _, pack := range fx.InboxPacks {
+		for _, k := range readPackKeys(pack) {
+			if ok, _ := fin.store.st.Has(k); ok {
+				drained++
+			}
+		}
+	}
+	total := 0
+	for _, pack := range fx.InboxPacks {
+		total += len(readPackKeys(pack))
+	}
+	leftovers := 0
+	_ = filepath.Walk(fin.dir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && !info.IsDir() {
+			leftovers++
+		}
+		return nil
+	})
+	e.want("inbox", "inbox.close", "inbox/close-drains-then-retires",
+		drained == total && total > 0 && leftovers == 0,
+		fmt.Sprintf("%d of %d objects reached the store; %d files left in the inbox",
+			drained, total, leftovers),
+		fmt.Sprintf("%d", drained))
+
+	// The Go-only gate option: WithGate brackets each entry's store write
+	// with the collector's write gate. Timing an option constructor would
+	// measure a closure allocation, so this is evidence rather than a case.
+	var gateEntered atomic.Int64
+	gated := newInboxWithGate(e, "check-inbox-gate", e.Profile.ThreadsMulti,
+		inbox.WithGate(func() func() { gateEntered.Add(1); return func() {} }))
+	defer gated.close()
+	gated.stageAll(e.fx)
+	for i, tmp := range gated.tmps {
+		_, cerr := gated.ib.Commit(tmp, gated.hashes[i], fx.InboxRoots[i])
+		must(cerr)
+	}
+	for _, root := range fx.InboxRoots {
+		gated.ib.WaitFor(root)
+	}
+	e.wantLocal("inbox", "inbox.with_gate", "inbox/with-gate-brackets-writes",
+		gateEntered.Load() > 0,
+		fmt.Sprintf("the write gate was never entered while %d packs drained",
+			len(fx.InboxPacks)),
+		fmt.Sprintf("entered=%d", gateEntered.Load()))
 }
 
 // readPackKeys lists the keys a wire pack carries.

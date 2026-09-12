@@ -10,7 +10,7 @@ use amber_store_core::key::{Key, Type};
 use crate::env::Env;
 use crate::fixtures::{
     MemMissing, PayloadSet, digest, digest_keys, digest_list, digest_vecs, entry_for, fold_bool,
-    fold_i64, fold_key, fold_u64, new_fold, random_bytes, sink_bytes,
+    fold_i64, fold_key, fold_u64, jobs_label, new_fold, random_bytes, sink_bytes,
 };
 use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
 
@@ -731,7 +731,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Case::new(
                 "fstree",
                 "fstree.check_complete",
-                &format!("widest/jobs-{jobs}"),
+                &format!("widest/{}", jobs_label(jobs)),
                 jobs,
                 fx.dirs[widest_i].objects as usize,
                 Box::new(move |_| Box::new(widest_i) as State),

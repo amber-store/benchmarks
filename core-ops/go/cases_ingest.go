@@ -182,12 +182,19 @@ func ingestCases(e *Env) []Case {
 
 	for _, jobs := range []int{p.ThreadsSingle, p.ThreadsMulti} {
 		jobs := jobs
+		// The label names the *kind* of worker count, not the number: the
+		// number is a profile setting and lives in the sample's dimensions,
+		// so one coverage manifest describes every profile.
+		label := "jobs-N"
+		if jobs == 1 {
+			label = "jobs-1"
+		}
 		out = append(out,
 			// Scan walks directory entries and stats inodes; it never opens
 			// a file body. Its byte figure is therefore the logical size of
 			// the tree it covered, not bandwidth, and is labelled as such.
 			Case{
-				Group: "ingest", Op: "ingest.scan", Workload: fmt.Sprintf("filtered/jobs-%d", jobs),
+				Group: "ingest", Op: "ingest.scan", Workload: fmt.Sprintf("filtered/%s", label),
 				Threads: jobs, Ops: int(fx.V1Included.Files),
 				Bytes: fx.V1Included.Bytes, BytesKind: BytesLogicalScanned,
 				Dims:          treeDims(fx.V1Included),
@@ -202,7 +209,7 @@ func ingestCases(e *Env) []Case {
 				},
 			},
 			Case{
-				Group: "ingest", Op: "ingest.objects", Workload: fmt.Sprintf("tree/jobs-%d", jobs),
+				Group: "ingest", Op: "ingest.objects", Workload: fmt.Sprintf("tree/%s", label),
 				Threads: jobs, Ops: int(fx.V1Included.Files),
 				Bytes: fx.V1Included.Bytes, BytesKind: BytesIncluded,
 				Dims:          treeDims(fx.V1Included),
@@ -227,7 +234,7 @@ func ingestCases(e *Env) []Case {
 				},
 			},
 			Case{
-				Group: "ingest", Op: "ingest.dir", Workload: fmt.Sprintf("tree/fresh-store/jobs-%d", jobs),
+				Group: "ingest", Op: "ingest.dir", Workload: fmt.Sprintf("tree/fresh-store/%s", label),
 				Threads: jobs, Ops: int(fx.V1Included.Files),
 				Bytes: fx.V1Included.Bytes, BytesKind: BytesIncluded,
 				Dims:          treeDims(fx.V1Included),
@@ -249,7 +256,7 @@ func ingestCases(e *Env) []Case {
 			// bytes, so it gets its own denominator rather than the first
 			// tree's.
 			Case{
-				Group: "ingest", Op: "ingest.dir", Workload: fmt.Sprintf("tree/incremental-change/jobs-%d", jobs),
+				Group: "ingest", Op: "ingest.dir", Workload: fmt.Sprintf("tree/incremental-change/%s", label),
 				Threads: jobs, Ops: int(fx.V2Included.Files),
 				Bytes: fx.V2Included.Bytes, BytesKind: BytesIncluded,
 				Dims:          treeDims(fx.V2Included),
@@ -271,7 +278,7 @@ func ingestCases(e *Env) []Case {
 			// practice and the pure dedup path: the same files are walked
 			// and chunked, and nothing at all is stored.
 			Case{
-				Group: "ingest", Op: "ingest.dir", Workload: fmt.Sprintf("tree/unchanged-repeat/jobs-%d", jobs),
+				Group: "ingest", Op: "ingest.dir", Workload: fmt.Sprintf("tree/unchanged-repeat/%s", label),
 				Threads: jobs, Ops: int(fx.V1Included.Files),
 				Bytes: fx.V1Included.Bytes, BytesKind: BytesIncluded,
 				Dims:          treeDims(fx.V1Included),

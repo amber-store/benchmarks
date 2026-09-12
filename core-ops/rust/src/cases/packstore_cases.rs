@@ -13,7 +13,7 @@ use amber_store_core::packstore::{self, CompactOpts, WriteOpts};
 use crate::env::Env;
 use crate::fixtures::{
     PayloadSet, RecordLoc, digest_strings, fold_bool, fold_i64, fold_key, fold_u64, new_fold,
-    payload_named, sink_bytes,
+    payload_named, sink_bytes, writers_label,
 };
 use crate::fixtures_build::{object_seq, store_objects, store_objects_of_size, store_options};
 use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
@@ -668,7 +668,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
                 Case::new(
                     "packstore",
                     "packstore.write_parallel",
-                    &format!("mixed-objects/writers-{writers}/verify-{verify}"),
+                    &format!("mixed-objects/{}/verify-{verify}", writers_label(writers)),
                     writers,
                     write_objs.len(),
                     Box::new(|env| Box::new(fresh_store(env, "ps-parallel")) as State),
@@ -708,7 +708,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
         Case::new(
             "packstore",
             "packstore.write_parallel",
-            "duplicate-stream/writers-8",
+            "duplicate-stream/writers-N",
             p.threads_multi,
             write_objs.len(),
             Box::new(move |env| {
@@ -1391,6 +1391,135 @@ pub fn checks(env: &Env, rec: &mut Recorder) {
         vst.close().unwrap();
     }
     let _ = fs::remove_dir_all(&vdir);
+
+    // --- the operations whose timings had no evidence ----------------
+    // A timing says a function ran. These say it did what it is named after,
+    // which is what makes the timing a measurement of that operation rather
+    // than of an unknown one.
+
+    // write_batch: every object in the batch is in the store afterwards, and
+    // reads back as itself.
+    let bdir = work_dir(env, "check-write-batch");
+    {
+        let bst = packstore::Store::open_with(&bdir, store_options(p)).unwrap();
+        let batch = store_objects(p, p.batch_ops.min(512), 70000);
+        let berr = bst.write_batch(object_seq(&batch));
+        let mut batch_ok = berr.is_ok();
+        let mut batch_detail = format!("{berr:?}");
+        for o in &batch {
+            if !batch_ok {
+                break;
+            }
+            match bst.get(o.key) {
+                Ok(got) if got == o.bytes => {}
+                other => {
+                    batch_ok = false;
+                    batch_detail = format!("{}: {other:?}", o.key);
+                }
+            }
+        }
+        rec.want(
+            "packstore",
+            "packstore.write_batch",
+            "packstore/write-batch-stores-all",
+            batch_ok,
+            format!("an object in the batch is not readable afterwards: {batch_detail}"),
+            crate::cases::pack::pack_content_digest(&batch),
+        );
+
+        // segments: the sealed segments describe the store. Which objects
+        // land in which segment follows the compressed sizes, so the counts
+        // are a within-core anchor; the shape of the list is not.
+        let bsegs = bst.segments().unwrap();
+        let shape_ok = bsegs
+            .iter()
+            .enumerate()
+            .all(|(i, sg)| sg.keys > 0 && (i == 0 || sg.id > bsegs[i - 1].id));
+        rec.want(
+            "packstore",
+            "packstore.segments",
+            "packstore/segments-are-ordered-and-nonempty",
+            shape_ok,
+            "the sealed segment list is not strictly ordered or holds an empty segment",
+            "ordered",
+        );
+        bst.close().unwrap();
+    }
+    let _ = fs::remove_dir_all(&bdir);
+
+    let tsegs = st.segments().unwrap();
+    let sealed_keys: u64 = tsegs.iter().map(|sg| sg.keys).sum();
+    rec.want_local(
+        "packstore",
+        "packstore.segments",
+        "packstore/segments-account-for-the-store",
+        !tsegs.is_empty() && sealed_keys > 0 && sealed_keys <= fx.store_keys.len() as u64,
+        format!(
+            "{} sealed segments hold {sealed_keys} of the store's {} objects",
+            tsegs.len(),
+            fx.store_keys.len()
+        ),
+        format!("segments={} keys={sealed_keys}", tsegs.len()),
+    );
+
+    // oldest_inflight_write: an idle store has no write in flight.
+    rec.want(
+        "packstore",
+        "packstore.oldest_inflight_write",
+        "packstore/oldest-inflight-idle-is-none",
+        st.oldest_inflight_write().is_none(),
+        "an idle store reported a write in flight",
+        "none",
+    );
+
+    // remove: exactly the removed segment's objects go, the rest stay, and
+    // the store still scrubs clean.
+    let rmdir = copied_dir(env, &fx.store_template, "check-remove");
+    {
+        let rmst = packstore::Store::open_with(&rmdir, store_options(p)).unwrap();
+        let rmsegs = rmst.segments().unwrap();
+        if rmsegs.len() < 2 {
+            rec.fail(
+                "packstore",
+                "packstore.remove",
+                "packstore/remove-drops-only-that-segment",
+                format!(
+                    "the fixture has {} sealed segments; the check needs two",
+                    rmsegs.len()
+                ),
+            );
+        } else {
+            let mut victim: Vec<Key> = Vec::new();
+            let mut survivor: Vec<Key> = Vec::new();
+            rmst.scan_index(rmsegs[0].id, |k, _, _| victim.push(k))
+                .unwrap();
+            rmst.scan_index(rmsegs[1].id, |k, _, _| survivor.push(k))
+                .unwrap();
+            rmst.remove(rmsegs[0].id).unwrap();
+            let gone = victim
+                .iter()
+                .filter(|k| !rmst.has(**k).unwrap_or(true))
+                .count();
+            let kept = survivor
+                .iter()
+                .filter(|k| rmst.has(**k).unwrap_or(false))
+                .count();
+            rec.want_local(
+                "packstore",
+                "packstore.remove",
+                "packstore/remove-drops-only-that-segment",
+                gone == victim.len() && kept == survivor.len() && rmst.verify(|| false).is_ok(),
+                format!(
+                    "{gone} of {} removed objects are gone, {kept} of {} others kept",
+                    victim.len(),
+                    survivor.len()
+                ),
+                format!("gone={gone} kept={kept}"),
+            );
+        }
+        rmst.close().unwrap();
+    }
+    let _ = fs::remove_dir_all(&rmdir);
 
     // --- the write barrier -------------------------------------------
     // begin_barrier/observe_keys/abort_barrier had no correctness evidence at

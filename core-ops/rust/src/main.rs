@@ -45,6 +45,18 @@ struct Report {
     blackhole: u64,
 }
 
+/// Rust and Go spell the same architectures differently. The report
+/// requires both documents to name the same machine, so one vocabulary has
+/// to win; the Go one does, and the native spelling stays in the build
+/// settings.
+fn canonical_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        other => other,
+    }
+}
+
 /// The machine's online CPU count. `available_parallelism` answers a
 /// different question -- how many workers this process may actually run --
 /// and both are recorded.
@@ -291,7 +303,11 @@ fn main() {
             .map(|s| s.trim().to_string())
             .unwrap_or_default(),
         os: std::env::consts::OS.to_string(),
-        arch: std::env::consts::ARCH.to_string(),
+        // Spelled the way the Go driver spells it, so the report can require
+        // the two documents to agree on the machine rather than on the
+        // toolchain's vocabulary. The native spelling is kept in
+        // `identity.build_settings.target`.
+        arch: canonical_arch(std::env::consts::ARCH).to_string(),
         // The machine's online CPU count, which is not the same number as
         // the parallelism this process actually gets under a CPU set.
         num_cpu: online_cpus(),

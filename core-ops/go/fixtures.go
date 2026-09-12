@@ -409,3 +409,21 @@ func foldBool(acc uint64, b bool) uint64 {
 // whole digest, so a case that constructs keys cannot be reduced to one that
 // only assembles headers.
 func foldKey(acc uint64, k key.Key) uint64 { return foldBytes(acc, k[:]) }
+
+// jobsLabel and writersLabel name a worker count by kind rather than by
+// number. The number is a profile setting and is recorded in the sample's
+// dimensions; keeping it out of the workload label is what lets one coverage
+// manifest describe every profile.
+func jobsLabel(n int) string {
+	if n == 1 {
+		return "jobs-1"
+	}
+	return "jobs-N"
+}
+
+func writersLabel(n int) string {
+	if n == 1 {
+		return "writers-1"
+	}
+	return "writers-N"
+}

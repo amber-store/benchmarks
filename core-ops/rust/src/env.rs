@@ -39,6 +39,15 @@ pub struct Profile {
     pub fan_outs: Vec<usize>,
 }
 
+/// The swept tree dimensions are the same absolute points in every profile,
+/// and so are the payload size classes. A profile changes how many
+/// repetitions are measured and how big the corpora and stores are; it does
+/// not change what a workload *means*. That is what lets one coverage
+/// manifest describe every profile.
+pub const TREE_WIDTHS: &[usize] = &[16, 256, 4096, 40000];
+pub const TREE_DEPTHS: &[usize] = &[1, 4, 12, 24];
+pub const FAN_OUTS: &[usize] = &[8, 128, 1024, 65536];
+
 pub fn quick_profile(seed: u64) -> Profile {
     Profile {
         name: "quick".into(),
@@ -58,9 +67,9 @@ pub fn quick_profile(seed: u64) -> Profile {
         inbox_packs: 8,
         batch_ops: 200,
         payload_total: 1 << 20,
-        tree_widths: vec![16, 256, 2000],
-        tree_depths: vec![1, 4, 8],
-        fan_outs: vec![8, 128, 1024],
+        tree_widths: TREE_WIDTHS.to_vec(),
+        tree_depths: TREE_DEPTHS.to_vec(),
+        fan_outs: FAN_OUTS.to_vec(),
     }
 }
 
@@ -83,9 +92,9 @@ pub fn standard_profile(seed: u64) -> Profile {
         inbox_packs: 48,
         batch_ops: 2000,
         payload_total: 8 << 20,
-        tree_widths: vec![16, 256, 4096, 40000],
-        tree_depths: vec![1, 4, 12, 24],
-        fan_outs: vec![8, 128, 1024, 65536],
+        tree_widths: TREE_WIDTHS.to_vec(),
+        tree_depths: TREE_DEPTHS.to_vec(),
+        fan_outs: FAN_OUTS.to_vec(),
     }
 }
 

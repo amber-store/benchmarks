@@ -314,6 +314,16 @@ func gcChecks(e *Env) {
 	beforeSegs, _ := st.objs.Segments()
 	beforeBytes := dirBytes(filepath.Join(st.dir, "objects"))
 
+	// Opening a collector over a populated store gives a usable collector:
+	// its status accounts for every sealed pack the store holds. Without
+	// this, `gc.open`'s timing would be a timing of an unknown thing.
+	openStatus, oerr := st.col.Status(context.Background())
+	e.want("gc", "gc.open", "gc/open-yields-a-usable-collector",
+		oerr == nil && len(openStatus.Packs) == len(beforeSegs) && len(beforeSegs) > 0,
+		fmt.Sprintf("a freshly opened collector saw %d packs of the store's %d (%v)",
+			len(openStatus.Packs), len(beforeSegs), oerr),
+		fmt.Sprintf("refs=%d", openStatus.Refs))
+
 	status, err := st.col.Status(context.Background())
 	e.want("gc", "gc.status", "gc/status-marks-live",
 		err == nil && status.Refs == 1 && status.Marked == len(live) && len(status.Packs) == len(beforeSegs),
@@ -423,6 +433,28 @@ func gcChecks(e *Env) {
 	// BeginWrite is exported by the Go collector only, so this check has no
 	// counterpart to be compared against.
 	e.passLocal("gc", "gc.begin_write", "gc/begin-write-release-is-idempotent", "ok")
+	// Closing a collector and opening a new one over the same directories
+	// leaves the reference graph intact: the live root is still explained
+	// by the same reference. That is what makes `gc.close`'s timing a
+	// measurement of a close rather than of a discard.
+	reopen := openGC(e, "check-gc-reopen")
+	defer reopen.close()
+	first := mustV(gc.Open(filepath.Join(reopen.dir, "closures"), reopen.objs, reopen.refs,
+		gcOptions(e.Profile)))
+	must(first.Close())
+	second, rerr := gc.Open(filepath.Join(reopen.dir, "closures"), reopen.objs, reopen.refs,
+		gcOptions(e.Profile))
+	if rerr != nil {
+		e.fail("gc", "gc.close", "gc/close-then-reopen", rerr.Error())
+	} else {
+		reopen.col = second
+		again, werr := second.Why(fx.GCLiveRoot)
+		e.want("gc", "gc.close", "gc/close-then-reopen",
+			werr == nil && len(again) == 1 && again[0] == "gc/live",
+			fmt.Sprintf("after a close and reopen the live root is explained by %v (%v)",
+				again, werr),
+			digestStrings(again))
+	}
 }
 
 var _ = key.Size

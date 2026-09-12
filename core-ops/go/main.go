@@ -63,6 +63,18 @@ type Profile struct {
 	FanOuts    []int `json:"fan_outs"`
 }
 
+// The swept tree dimensions are the same absolute points in every profile,
+// and so are the payload size classes. A profile changes how many
+// repetitions are measured and how big the corpora and stores are; it does
+// not change what a workload *means*. That is what lets one coverage
+// manifest describe every profile, and what lets a quick run's scaling plot
+// be read beside a standard one's.
+var (
+	treeWidths = []int{16, 256, 4096, 40000}
+	treeDepths = []int{1, 4, 12, 24}
+	fanOuts    = []int{8, 128, 1024, 65536}
+)
+
 func quickProfile(seed uint64) Profile {
 	return Profile{
 		Name: "quick", Seed: seed, Reps: 1, Warmup: 0,
@@ -71,9 +83,7 @@ func quickProfile(seed uint64) Profile {
 		SyntheticWide: 2000, StoreObjects: 1500, SegmentBytes: 2 << 20,
 		RefRecords: 200, InboxPacks: 8, BatchOps: 200,
 		PayloadTotal: 1 << 20,
-		TreeWidths:   []int{16, 256, 2000},
-		TreeDepths:   []int{1, 4, 8},
-		FanOuts:      []int{8, 128, 1024},
+		TreeWidths:   treeWidths, TreeDepths: treeDepths, FanOuts: fanOuts,
 	}
 }
 
@@ -85,9 +95,7 @@ func standardProfile(seed uint64) Profile {
 		SyntheticWide: 40000, StoreObjects: 30000, SegmentBytes: 16 << 20,
 		RefRecords: 5000, InboxPacks: 48, BatchOps: 2000,
 		PayloadTotal: 8 << 20,
-		TreeWidths:   []int{16, 256, 4096, 40000},
-		TreeDepths:   []int{1, 4, 12, 24},
-		FanOuts:      []int{8, 128, 1024, 65536},
+		TreeWidths:   treeWidths, TreeDepths: treeDepths, FanOuts: fanOuts,
 	}
 }
 

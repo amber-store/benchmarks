@@ -12,7 +12,9 @@ use amber_store_core::packstore;
 use amber_store_core::refstore;
 
 use crate::env::{Env, Profile};
-use crate::fixtures::{fold_bool, fold_i64, fold_key, fold_str, fold_u64, new_fold};
+use crate::fixtures::{
+    digest_strings, fold_bool, fold_i64, fold_key, fold_str, fold_u64, new_fold,
+};
 use crate::fixtures_build::store_options;
 use crate::harness::{Case, Dims, Recorder, State};
 use crate::stores::{copied_dir, dir_bytes};
@@ -381,6 +383,23 @@ pub fn checks(env: &Env, rec: &mut Recorder) {
         let before_segs = objs.segments().unwrap_or_default().len();
         let before_bytes = dir_bytes(&st.dir.join("objects"));
 
+        // Opening a collector over a populated store gives a usable
+        // collector: its status accounts for every sealed pack the store
+        // holds. Without this, `gc.open`'s timing would be a timing of an
+        // unknown thing.
+        let open_status = col.status();
+        rec.want(
+            "gc",
+            "gc.open",
+            "gc/open-yields-a-usable-collector",
+            matches!(&open_status, Ok(s) if s.packs.len() == before_segs && before_segs > 0),
+            format!(
+                "a freshly opened collector saw {:?} packs of the store's {before_segs}",
+                open_status.as_ref().map(|s| s.packs.len())
+            ),
+            format!("refs={}", open_status.as_ref().map(|s| s.refs).unwrap_or(0)),
+        );
+
         let status = col.status();
         rec.want(
             "gc",
@@ -577,4 +596,41 @@ pub fn checks(env: &Env, rec: &mut Recorder) {
         );
     }
     st.close();
+
+    // Closing a collector and opening a new one over the same directories
+    // leaves the reference graph intact: the live root is still explained by
+    // the same reference. That is what makes `gc.close`'s timing a
+    // measurement of a close rather than of a discard.
+    let mut reopen = open_gc(env, "check-gc-reopen");
+    {
+        let first = gc::Collector::open(
+            reopen.dir.join("closures"),
+            Arc::clone(reopen.objs.as_ref().unwrap()),
+            Arc::clone(reopen.refs.as_ref().unwrap()),
+            gc_options(&env.profile),
+        )
+        .unwrap();
+        first.close().unwrap();
+    }
+    match gc::Collector::open(
+        reopen.dir.join("closures"),
+        Arc::clone(reopen.objs.as_ref().unwrap()),
+        Arc::clone(reopen.refs.as_ref().unwrap()),
+        gc_options(&env.profile),
+    ) {
+        Err(e) => rec.fail("gc", "gc.close", "gc/close-then-reopen", e.to_string()),
+        Ok(second) => {
+            let again = second.why(fx.gc_live_root);
+            rec.want(
+                "gc",
+                "gc.close",
+                "gc/close-then-reopen",
+                matches!(&again, Ok(n) if n.len() == 1 && n[0] == "gc/live"),
+                format!("after a close and reopen the live root is explained by {again:?}"),
+                digest_strings(again.as_deref().unwrap_or(&[])),
+            );
+            reopen.col = Some(second);
+        }
+    }
+    reopen.close();
 }

@@ -140,7 +140,7 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             Case::new(
                 "refstore",
                 "refstore.put",
-                &format!("records-{n}/sync-{sync}"),
+                &format!("records/sync-{sync}"),
                 1,
                 n,
                 Box::new(move |env| Box::new(fresh_refs(env, "rs-put", sync)) as State),
@@ -162,7 +162,7 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "refstore",
             "refstore.put_batch",
-            &format!("records-{n}/sync-false"),
+            "records/sync-false",
             1,
             n,
             Box::new(|env| Box::new(fresh_refs(env, "rs-batch", false)) as State),
@@ -233,7 +233,7 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "refstore",
             "refstore.all",
-            &format!("records-{n}"),
+            "records",
             1,
             n,
             Box::new(|env| {
@@ -261,7 +261,7 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "refstore",
             "refstore.delete",
-            &format!("records-{n}"),
+            "records",
             1,
             n,
             Box::new(|env| {
@@ -284,7 +284,7 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "refstore",
             "refstore.wipe",
-            &format!("records-{n}"),
+            "records",
             1,
             1,
             Box::new(|env| {
@@ -304,6 +304,42 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
 
 pub fn refstore_checks(env: &Env, rec: &mut Recorder) {
     let fx = &env.fx;
+
+    // Open and close had no correctness evidence: a timing of "open a store"
+    // says nothing unless the store is usable afterwards, and a timing of
+    // "close a store" says nothing unless what was committed is still there.
+    // Write, drop, reopen, read back.
+    let rdir = work_dir(env, "check-refs-reopen");
+    let n = fx.ref_batch.len().min(64);
+    {
+        let rs = refstore::Store::open(&rdir, false).unwrap();
+        rs.put_batch(&fx.ref_batch[..n]).unwrap();
+    }
+    {
+        let rs = refstore::Store::open(&rdir, false).unwrap();
+        let mut reopen_ok = true;
+        let mut detail = String::new();
+        for r in &fx.ref_batch[..n] {
+            match rs.get(&r.name) {
+                Ok(got) if got == r.data => {}
+                other => {
+                    reopen_ok = false;
+                    detail = format!("{}: {other:?}", r.name);
+                    break;
+                }
+            }
+        }
+        rec.want(
+            "refstore",
+            "refstore.close",
+            "refstore/reopen-sees-committed-records",
+            reopen_ok,
+            format!("a record committed before the close was not there after the reopen: {detail}"),
+            format!("n={n}"),
+        );
+    }
+    let _ = fs::remove_dir_all(&rdir);
+
     let h = copied_refs(env, &fx.refs_template, "check-refs", false);
     {
         let st = h.store();
@@ -547,7 +583,7 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "inbox",
             "inbox.stage",
-            &format!("packs-{packs}"),
+            "packs",
             workers,
             packs,
             Box::new(move |env| Box::new(new_inbox(env, "inbox-stage", workers)) as State),
@@ -569,7 +605,7 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "inbox",
             "inbox.discard",
-            &format!("packs-{packs}"),
+            "packs",
             workers,
             packs,
             Box::new(move |env| {
@@ -595,7 +631,7 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "inbox",
             "inbox.drain",
-            &format!("packs-{packs}/new"),
+            "packs/new",
             workers,
             packs,
             Box::new(move |env| {
@@ -628,7 +664,7 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
         Case::new(
             "inbox",
             "inbox.commit",
-            &format!("packs-{packs}/duplicate"),
+            "packs/duplicate",
             workers,
             packs,
             Box::new(move |env| {
@@ -810,5 +846,94 @@ pub fn inbox_checks(env: &Env, rec: &mut Recorder) {
         );
     }
     idem.close();
+
+    // Open had no correctness evidence either. Its documented contract is
+    // that a staged-but-uncommitted body left behind by a previous run is
+    // swept when the inbox is opened again, so a crash between stage and
+    // commit cannot accumulate garbage.
+    let mut sweep = new_inbox(env, "check-inbox-sweep", env.profile.threads_multi);
+    let meta = Meta {
+        ref_: "bench/inbox/check".into(),
+        root: key_bytes(fx.inbox_roots[0]),
+        received_at: 1_700_000_000_000_000_000,
+    };
+    let (stale, _, _) = sweep
+        .ib
+        .as_ref()
+        .unwrap()
+        .stage(&meta, &fx.inbox_packs[0][..])
+        .unwrap();
+    sweep.ib.take().unwrap().close();
+    let before = stale.exists();
+    let arc = Arc::clone(sweep.store.as_ref().unwrap().st.as_ref().unwrap());
+    sweep.ib = Some(Inbox::open(&sweep.dir, arc, env.profile.threads_multi, None).unwrap());
+    let after = stale.exists();
+    rec.want(
+        "inbox",
+        "inbox.open",
+        "inbox/open-sweeps-staged-tmp-files",
+        before && !after,
+        format!("the staged body was {before} before the reopen and {after} after"),
+        "swept",
+    );
+    sweep.close();
+
+    // Close retires the workers after the entries they were given have been
+    // drained: everything committed before the close is in the store, and
+    // the inbox directory is left with nothing to sweep.
+    let mut fin = new_inbox(env, "check-inbox-close", env.profile.threads_multi);
+    fin.stage_all(env);
+    {
+        let ib = fin.ib.as_ref().unwrap();
+        for (i, tmp) in fin.tmps.iter().enumerate() {
+            ib.commit(tmp, &fin.hashes[i], fx.inbox_roots[i]).unwrap();
+        }
+        for root in &fx.inbox_roots {
+            ib.wait_for(*root);
+        }
+    }
+    fin.ib.take().unwrap().close();
+    let mut drained = 0usize;
+    let mut total = 0usize;
+    {
+        let store = fin.store.as_ref().unwrap().store();
+        for pack in &fx.inbox_packs {
+            for k in read_pack_keys(pack) {
+                total += 1;
+                if store.has(k).unwrap_or(false) {
+                    drained += 1;
+                }
+            }
+        }
+    }
+    let leftovers = count_files(&fin.dir);
+    rec.want(
+        "inbox",
+        "inbox.close",
+        "inbox/close-drains-then-retires",
+        drained == total && total > 0 && leftovers == 0,
+        format!(
+            "{drained} of {total} objects reached the store; {leftovers} files left in the inbox"
+        ),
+        format!("{drained}"),
+    );
+    fin.close();
+
     is.close();
+}
+
+/// How many regular files a directory tree holds. Used once, to say that a
+/// closed inbox left nothing behind.
+fn count_files(dir: &std::path::Path) -> usize {
+    let mut n = 0;
+    if let Ok(entries) = fs::read_dir(dir) {
+        for e in entries.flatten() {
+            match e.file_type() {
+                Ok(ft) if ft.is_dir() => n += count_files(&e.path()),
+                Ok(_) => n += 1,
+                Err(_) => {}
+            }
+        }
+    }
+    n
 }

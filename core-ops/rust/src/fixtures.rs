@@ -875,3 +875,15 @@ pub fn sink_bytes(acc: u64, b: &[u8]) -> u64 {
         std::hint::black_box(fold_u64(acc, b[b.len() - 1] as u64))
     }
 }
+
+/// Names a worker count by kind rather than by number. The number is a
+/// profile setting and is recorded in the sample's dimensions; keeping it out
+/// of the workload label is what lets one coverage manifest describe every
+/// profile. Mirrors `jobsLabel` in `../go/fixtures.go`.
+pub fn jobs_label(n: usize) -> &'static str {
+    if n == 1 { "jobs-1" } else { "jobs-N" }
+}
+
+pub fn writers_label(n: usize) -> &'static str {
+    if n == 1 { "writers-1" } else { "writers-N" }
+}

@@ -498,7 +498,7 @@ func packstoreCases(e *Env) []Case {
 	for _, writers := range []int{p.ThreadsSingle, p.ThreadsMulti} {
 		for _, verify := range []bool{false, true} {
 			writers, verify := writers, verify
-			name := fmt.Sprintf("mixed-objects/writers-%d/verify-%v", writers, verify)
+			name := fmt.Sprintf("mixed-objects/%s/verify-%v", writersLabel(writers), verify)
 			out = append(out, Case{
 				Group: "packstore", Op: "packstore.write_parallel", Workload: name, Threads: writers,
 				Ops: len(writeObjs), Bytes: packBytes(writeObjs), BytesKind: BytesPayload,
@@ -521,7 +521,7 @@ func packstoreCases(e *Env) []Case {
 		}
 	}
 	out = append(out, Case{
-		Group: "packstore", Op: "packstore.write_parallel", Workload: "duplicate-stream/writers-8", Threads: p.ThreadsMulti,
+		Group: "packstore", Op: "packstore.write_parallel", Workload: "duplicate-stream/writers-N", Threads: p.ThreadsMulti,
 		Ops: len(writeObjs), Bytes: packBytes(writeObjs), BytesKind: BytesPayload,
 		Dims: Dims{Items: int64(len(writeObjs)), Objects: int64(len(writeObjs)),
 			Content: "duplicate"},
@@ -971,6 +971,105 @@ func packstoreChecks(e *Env) {
 		fmt.Sprintf("stored=%d deduped=%d", ws.Stored, ws.Deduped))
 	must(vst.Close())
 	must(os.RemoveAll(vdir))
+
+	// --- the operations whose timings had no evidence ----------------
+	// A timing says a function ran. These say it did what it is named
+	// after, which is what makes the timing a measurement of that
+	// operation rather than of an unknown one.
+
+	// write_batch: every object in the batch is in the store afterwards,
+	// and reads back as itself.
+	bdir := workDir(e, "check-write-batch")
+	defer os.RemoveAll(bdir)
+	bst := mustV(packstore.Open(bdir,
+		packstore.WithSegmentSize(p.SegmentBytes), packstore.WithSync(false)))
+	batch := storeObjects(p, minInt(p.BatchOps, 512), 70000)
+	berr := bst.WriteBatch(objectSeq(batch))
+	batchOK := berr == nil
+	var batchDetail string
+	for _, o := range batch {
+		if !batchOK {
+			break
+		}
+		got, gerr := bst.Get(o.Key)
+		if gerr != nil || string(got) != string(o.Bytes) {
+			batchOK = false
+			batchDetail = fmt.Sprintf("%s: %v", o.Key, gerr)
+		}
+	}
+	e.want("packstore", "packstore.write_batch", "packstore/write-batch-stores-all",
+		batchOK, "an object in the batch is not readable afterwards: "+batchDetail,
+		packContentDigest(batch))
+
+	// segments: the sealed segments describe the store. Which objects land
+	// in which segment follows the compressed sizes, so the counts are a
+	// within-core anchor; the shape of the list is not.
+	bsegs, serr := bst.Segments()
+	shapeOK := serr == nil
+	for i := range bsegs {
+		if bsegs[i].Keys == 0 || (i > 0 && bsegs[i].ID <= bsegs[i-1].ID) {
+			shapeOK = false
+		}
+	}
+	e.want("packstore", "packstore.segments", "packstore/segments-are-ordered-and-nonempty",
+		shapeOK && len(bsegs) >= 0,
+		fmt.Sprintf("the sealed segment list is not strictly ordered or holds an empty segment: %v", serr),
+		"ordered")
+	tsegs := mustV(st.Segments())
+	var sealedKeys uint64
+	for _, sg := range tsegs {
+		sealedKeys += sg.Keys
+	}
+	e.wantLocal("packstore", "packstore.segments", "packstore/segments-account-for-the-store",
+		len(tsegs) > 0 && sealedKeys > 0 && sealedKeys <= uint64(len(fx.StoreKeys)),
+		fmt.Sprintf("%d sealed segments hold %d of the store's %d objects",
+			len(tsegs), sealedKeys, len(fx.StoreKeys)),
+		fmt.Sprintf("segments=%d keys=%d", len(tsegs), sealedKeys))
+
+	// oldest_inflight_write: an idle store has no write in flight.
+	_, inflight := st.OldestInflightWrite()
+	e.want("packstore", "packstore.oldest_inflight_write", "packstore/oldest-inflight-idle-is-none",
+		!inflight, "an idle store reported a write in flight", "none")
+
+	// remove: exactly the removed segment's objects go, the rest stay, and
+	// the store still scrubs clean.
+	rmdir := copiedDir(e, fx.StoreTemplate, "check-remove")
+	defer os.RemoveAll(rmdir)
+	rmst := mustV(packstore.Open(rmdir,
+		packstore.WithSegmentSize(p.SegmentBytes), packstore.WithSync(false)))
+	rmsegs := mustV(rmst.Segments())
+	if len(rmsegs) < 2 {
+		e.fail("packstore", "packstore.remove", "packstore/remove-drops-only-that-segment",
+			fmt.Sprintf("the fixture has %d sealed segments; the check needs two", len(rmsegs)))
+	} else {
+		var victim, survivor []key.Key
+		must(rmst.ScanIndex(rmsegs[0].ID, func(k key.Key, _ uint64, _ uint32) {
+			victim = append(victim, k)
+		}))
+		must(rmst.ScanIndex(rmsegs[1].ID, func(k key.Key, _ uint64, _ uint32) {
+			survivor = append(survivor, k)
+		}))
+		must(rmst.Remove(rmsegs[0].ID))
+		gone, kept := 0, 0
+		for _, k := range victim {
+			if ok, _ := rmst.Has(k); !ok {
+				gone++
+			}
+		}
+		for _, k := range survivor {
+			if ok, _ := rmst.Has(k); ok {
+				kept++
+			}
+		}
+		e.wantLocal("packstore", "packstore.remove", "packstore/remove-drops-only-that-segment",
+			gone == len(victim) && kept == len(survivor) &&
+				rmst.Verify(context.Background()) == nil,
+			fmt.Sprintf("%d of %d removed objects are gone, %d of %d others kept",
+				gone, len(victim), kept, len(survivor)),
+			fmt.Sprintf("gone=%d kept=%d", gone, kept))
+	}
+	must(rmst.Close())
+	must(bst.Close())
 
 	// --- the write barrier -------------------------------------------
 	// BeginBarrier/ObserveKeys/AbortBarrier had no correctness evidence at
