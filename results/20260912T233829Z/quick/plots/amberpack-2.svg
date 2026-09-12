@@ -448,7 +448,7 @@ z
    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="20.16" y="578.47875" transform="rotate(-0 20.16 578.47875)">No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.</text>
   </g>
   <g id="text_42">
-   <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="20.16" y="589.27875" transform="rotate(-0 20.16 589.27875)">Host bld1, CPUs 0-7, 1 repetitions, warm caches.</text>
+   <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="20.16" y="589.27875" transform="rotate(-0 20.16 589.27875)">AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.</text>
   </g>
   <g id="text_43">
    <text style="font-size: 8px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="20.16" y="600.07875" transform="rotate(-0 20.16 600.07875)">The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another</text>

@@ -380,7 +380,7 @@ def markdown(identity, go, rust, validity, paired, unpaired, sweep_rows,
 
     add('## Environment and configuration')
     add('')
-    add(f'* Host `{env["host"]}`, {env["kernel"]}, {env["cpu_model"]}, '
+    add(f'* {env["cpu_model"]}, {env["kernel"]}, '
         f'{env["cpu_count"]} CPUs, {env["mem_total_kb"] // 1024} MiB RAM.')
     add(f'* Both drivers pinned to CPUs `{env["cpu_set"]}` and run **sequentially**, '
         'never concurrently.')
@@ -837,7 +837,7 @@ def chart_footer(identity, profile):
     return [
         'No overall ranking is implied: the two cores trade differently across the '
         'operation set, and these bars are per operation only.',
-        f'Host {identity["environment"]["host"]}, CPUs {identity["environment"]["cpu_set"]}, '
+        f'{identity["environment"]["cpu_model"]}, CPUs {identity["environment"]["cpu_set"]}, '
         f'{profile["reps"]} repetitions, warm caches.',
     ]
 

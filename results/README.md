@@ -6,8 +6,9 @@ Both reports include Markdown tables, SVG charts, raw JSON, and CSV data.
 
 | Setting | Value |
 |---|---|
-| Host | bld1 |
-| CPU | AMD Ryzen 9 7950X3D; CPUs 0–7 |
+| Machine | Dedicated AMD Ryzen 9 7950X3D system |
+| CPU allocation | 8 logical CPUs, pinned to CPUs 0–7 |
+| Memory | 125.3 GiB visible to Linux |
 | Scratch filesystem | ext4 |
 | Standard repetitions | 7 per case, split between opposite execution orders |
 | Paired cases | 247 |
@@ -15,6 +16,8 @@ Both reports include Markdown tables, SVG charts, raw JSON, and CSV data.
 | Scaling series | 27 |
 | Go core commit | `4ed4660657b12421a534ab0b08cfd717ae3d2291` |
 | Rust core commit | `141df2b0a9a8ad1726769f63811db3a166be188a` |
+
+The raw hostname `bld1` identifies this measurement machine.
 
 [identity.json](20260912T233829Z/identity.json) records the clean harness commit, verified core sources, and executable hashes.
 Each report also records the post-processing source hash.

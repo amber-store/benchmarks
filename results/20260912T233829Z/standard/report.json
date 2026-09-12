@@ -44178,7 +44178,7 @@
     ],
     "warmup": 2
   },
-  "report_generator_sha256": "451aefce2f181860a9c30aff6efb25911dcd8949a319dd9a51d728df8b72834c",
+  "report_generator_sha256": "2fc1e5688e9e15b9e1d7e814b10db2b374caeca42979e9085846ad68db08ef1e",
   "scaling": [
     {
       "dimension": "item_bytes",

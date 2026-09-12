@@ -7,7 +7,7 @@ operation, through their library APIs**, with no process start inside any
 measured interval.
 
 Latest recorded results: [standard report](results/20260912T233829Z/standard/REPORT.md)
-and [run details](results/README.md). Both profiles ran on bld1.
+and [run details](results/README.md). Both profiles ran on a dedicated AMD Ryzen 9 7950X3D machine.
 
 ```sh
 ./run.sh                      # quick profile: correctness first, ~25 s

@@ -24,7 +24,7 @@ number over unlike operations would say nothing.
 
 ## Environment and configuration
 
-* Host `bld1`, Linux 6.18.45, AMD Ryzen 9 7950X3D 16-Core Processor, 32 CPUs, 128324 MiB RAM.
+* AMD Ryzen 9 7950X3D 16-Core Processor, Linux 6.18.45, 32 CPUs, 128324 MiB RAM.
 * Both drivers pinned to CPUs `0-7` and run **sequentially**, never concurrently.
 * Operations that choose their own parallelism (marked `auto`) got 8 workers in both cores, under that CPU set.
 * Scratch on `ext4`; extended attributes in fixtures: true.

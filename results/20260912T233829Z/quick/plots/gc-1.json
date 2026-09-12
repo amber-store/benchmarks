@@ -20,7 +20,7 @@
   ],
   "footer": [
     "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
-    "Host bld1, CPUs 0-7, 1 repetitions, warm caches.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.",
     "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
   ],
   "series": [
