@@ -171,6 +171,17 @@ pub fn run(opts: &Options) -> Result<(Report, bool), String> {
         );
     }
 
+    // --- who is measuring --------------------------------------------------
+    //
+    // Read before anything is measured, not after. `run.sh` builds the
+    // harness from this checkout and runs it immediately, so the revision at
+    // the start of a run is the source the running executable was built
+    // from; the revision at the *end* is whatever the checkout happens to be
+    // by then, which on a working machine is not the same thing. A recorded
+    // result that names a commit whose code never ran is worse than one that
+    // names none.
+    let (harness_commit, harness_dirty) = toolbox::git_revision(&opts.harness_repo);
+
     // --- tools -------------------------------------------------------------
     let mut tools = discover(opts, &groups, &selected);
     let mut skipped: BTreeMap<String, String> = BTreeMap::new();
@@ -377,7 +388,6 @@ pub fn run(opts: &Options) -> Result<(Report, bool), String> {
     let summary = report::summarize(&runs);
     let unsupported = report::unsupported(&runs);
     let errors = report::errors(&runs);
-    let (harness_commit, harness_dirty) = toolbox::git_revision(&opts.harness_repo);
 
     let mut report = Report {
         schema_version: report::SCHEMA_VERSION,
