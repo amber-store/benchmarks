@@ -334,6 +334,85 @@ pub struct Entry {
     pub redacted_paths: Vec<String>,
 }
 
+/// Check raw correctness evidence, independently of the top-level verdict.
+fn validate_comparison(raw: &serde_json::Value) -> Result<(), String> {
+    let reject = |what: &str| Err(format!("report is not a valid comparison: {what}"));
+    for field in ["errors", "skipped_backends"] {
+        let empty = raw.get(field).is_some_and(|v| {
+            v.as_array().is_some_and(Vec::is_empty)
+                || v.as_object().is_some_and(serde_json::Map::is_empty)
+        });
+        if !empty {
+            return reject(field);
+        }
+    }
+    if raw
+        .pointer("/tools/missing")
+        .is_some_and(|v| v.as_object().is_none_or(|m| !m.is_empty()))
+    {
+        return reject("missing tools");
+    }
+    let checks_ok = |v: &serde_json::Value| {
+        v.as_array().is_some_and(|a| {
+            a.iter()
+                .all(|c| c.get("passed").and_then(serde_json::Value::as_bool) == Some(true))
+        })
+    };
+    if !raw.get("cross_checks").is_some_and(checks_ok) {
+        return reject("failed or missing cross-core checks");
+    }
+    let runs = raw
+        .get("runs")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "report has no run records".to_string())?;
+    if runs.is_empty() {
+        return reject("no run records");
+    }
+    for run in runs {
+        if run.get("error").is_some_and(|v| !v.is_null()) {
+            return reject("aborted repetition");
+        }
+        if !run
+            .get("verifications")
+            .is_some_and(|v| checks_ok(v) && v.as_array().is_some_and(|a| !a.is_empty()))
+        {
+            return reject("failed or missing repetition verification");
+        }
+        let ops = run
+            .get("ops")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| "report has no raw operations".to_string())?;
+        if ops.is_empty() {
+            return reject("no raw operations");
+        }
+        for op in ops {
+            match op.get("status").and_then(serde_json::Value::as_str) {
+                Some("ok") => {}
+                Some("unsupported") if op.get("wall_ns").is_none_or(serde_json::Value::is_null) => {
+                }
+                _ => return reject("failed or malformed raw operation"),
+            }
+        }
+    }
+    let summary = raw
+        .get("summary")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "report has no summary".to_string())?;
+    for row in summary {
+        for field in ["failed", "excluded_invalid_samples"] {
+            if row
+                .get(field)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+                != 0
+            {
+                return reject("summary contains invalid samples");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Publishes one finished run. Returns the directory it created.
 pub fn publish(opts: &Options) -> Result<PathBuf, String> {
     let json_path = opts.report_dir.join("report.json");
@@ -367,6 +446,11 @@ pub fn publish(opts: &Options) -> Result<PathBuf, String> {
                 report.validity.reasons.join("; ")
             }
         ));
+    }
+
+    if report.validity.valid {
+        let evidence: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        validate_comparison(&evidence)?;
     }
 
     let id = match &opts.id {
@@ -425,8 +509,16 @@ pub fn publish(opts: &Options) -> Result<PathBuf, String> {
     if report.validity.valid {
         let plot_dir = dir.join("plots");
         std::fs::create_dir_all(&plot_dir).map_err(|e| format!("{}: {e}", plot_dir.display()))?;
-        for (name, svg) in charts(&report) {
-            let svg = redact_text(&svg, &redactions);
+        for (name, chart) in charts(&report) {
+            let spec = serde_json::to_string_pretty(&chart).map_err(|e| e.to_string())?;
+            let spec = redact_text(&spec, &redactions);
+            let chart: BarChart = serde_json::from_str(&spec).map_err(|e| e.to_string())?;
+            let svg = chart.render()?;
+            fsx::write_file(
+                &plot_dir.join(name.replace(".svg", ".json")),
+                spec.as_bytes(),
+            )
+            .map_err(|e| e.to_string())?;
             fsx::write_file(&plot_dir.join(&name), svg.as_bytes())
                 .map_err(|e| format!("{name}: {e}"))?;
             plots.push(format!("plots/{name}"));
@@ -601,7 +693,7 @@ fn ordered(values: impl Iterator<Item = String>) -> Vec<String> {
 /// One chart never spans two scenarios: the operations of `tree/lifecycle`
 /// and of `blob/nix-closure` are different work, and a picture that put them
 /// on one axis would be a ranking of unlike things.
-pub fn charts(r: &Loaded) -> Vec<(String, String)> {
+pub fn charts(r: &Loaded) -> Vec<(String, BarChart)> {
     let mut out = Vec::new();
     for scenario in ordered(r.summary.iter().map(|s| s.scenario.clone())) {
         let slug = scenario.replace('/', "-");
@@ -707,7 +799,7 @@ fn chart(
     subtitle: &str,
     pick: impl Fn(&SummaryRow) -> Option<(f64, Option<f64>, String, usize)>,
     extra_notes: &[&str],
-) -> Option<String> {
+) -> Option<BarChart> {
     let ops = ordered_ops(rows);
     let backends = ordered(rows.iter().map(|s| s.backend.clone()));
     if ops.is_empty() || backends.is_empty() {
@@ -809,15 +901,14 @@ fn chart(
         150,
     ));
 
-    BarChart {
+    Some(BarChart {
         title: format!("{scenario} — {what}"),
         subtitle: vec![subtitle.to_string()],
         footer,
         categories: ops,
         series: backends,
         cells,
-    }
-    .render()
+    })
 }
 
 /// Operation names in the order the report lists them, deduplicated.
@@ -1150,9 +1241,10 @@ fn index(entries: &[Entry]) -> String {
 fn table(entries: &[Entry]) -> String {
     let mut s = String::new();
     s.push_str(
-        "| run | started (UTC) | profile | repeats | valid | host | harness | cores measured |\n",
+        "| run | started (UTC) | profile | repeats | read cache | valid | host | harness | \
+         cores measured |\n",
     );
-    s.push_str("|---|---|---|---|---|---|---|---|\n");
+    s.push_str("|---|---|---|---|---|---|---|---|---|\n");
     for e in entries {
         let cores = if e.core_revisions.is_empty() {
             "—".to_string()
@@ -1164,12 +1256,13 @@ fn table(entries: &[Entry]) -> String {
                 .join("<br>")
         };
         s.push_str(&format!(
-            "| [`{}`]({}/README.md) | {} | `{}` | {} | {} | {} × {} | {}{} | {cores} |\n",
+            "| [`{}`]({}/README.md) | {} | `{}` | {} | {} | {} | {} × {} | {}{} | {cores} |\n",
             e.id,
             e.id,
             e.started_utc,
             e.profile,
             e.repeats,
+            cache_column(&e.cache_policy),
             if e.valid { "yes" } else { "**no**" },
             e.host_cores,
             e.host_cpu,
@@ -1181,12 +1274,31 @@ fn table(entries: &[Entry]) -> String {
         ));
     }
     s.push('\n');
+    s.push_str(
+        "The *read cache* column is the run's cache policy in one word: `warm`\n\
+         means the page cache was not dropped, so read and restore numbers\n\
+         followed the writes that filled the store and must not be read as\n\
+         cold-cache numbers. Each run's page states the policy in full.\n\n",
+    );
     for e in entries {
         if let Some(label) = &e.label {
             s.push_str(&format!("* [`{}`]({}/README.md) — {label}\n", e.id, e.id));
         }
     }
     s
+}
+
+/// The cache policy in one word, for the index column. The full sentence
+/// stays on the run's own page; this only says which of the two it was, and
+/// says nothing at all when it recognises neither.
+fn cache_column(policy: &str) -> &'static str {
+    if policy.contains("WARM-CACHE") {
+        "warm"
+    } else if policy.contains("Read numbers are cold") {
+        "cold"
+    } else {
+        "—"
+    }
 }
 
 #[cfg(test)]

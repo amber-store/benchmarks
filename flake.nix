@@ -39,6 +39,8 @@
       # every other tool, so `results/*/explore.ipynb` runs the same way on
       # another machine. The committed Markdown and SVG are readable without
       # any of it.
+      plotPythonEnv = pkgs: pkgs.python3.withPackages (ps: [ ps.matplotlib ]);
+
       pythonEnv = pkgs:
         pkgs.python3.withPackages (ps: [
           ps.jupyter-core
@@ -106,6 +108,12 @@
             version = "0.1.0";
             src = self;
             cargoLock.lockFile = ./Cargo.lock;
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            nativeCheckInputs = [ pkgs.git (plotPythonEnv pkgs) ];
+            postFixup = ''
+              wrapProgram "$out/bin/amber-cas-bench" \
+                --prefix PATH : ${pkgs.lib.makeBinPath [ (plotPythonEnv pkgs) ]}
+            '';
           };
 
           # The pinned notebook environment, also usable on its own:

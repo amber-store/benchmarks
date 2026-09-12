@@ -18,8 +18,10 @@ thing in every row.
 ./run.sh --out ./my-results       # choose where the report goes
 ```
 
-That one command needs nothing prepared first, and nothing checked out
-beside this repository. It enters this directory's Nix development shell, so
+Run this on Linux with Nix installed and flakes enabled. The smoke profile
+checks for 4 GiB of free disk space, excluding space needed for builds.
+No sibling checkout is required.
+The command enters this directory's Nix development shell, so
 `git`, `restic`, `nix`, `garage` and `mc` all come from `flake.lock`; builds
 **both** cores from the source revisions pinned as the flake's
 `amber-rust-src` and `amber-go-src` inputs; builds the harness with a locked
@@ -503,7 +505,8 @@ That writes `results/<YYYYMMDDTHHMMSSZ>-<profile>/` containing
 
 * `README.md` — the run's page: what produced the numbers, which
   executables were measured with their revisions and hashes, and the charts;
-* `plots/*.svg` — one static chart per scenario and metric;
+* `plots/*.svg` — one Matplotlib chart per scenario and metric;
+* `plots/*.json` — the exact chart specifications reused by the notebook;
 * `REPORT.md`, `report.json` and the four CSVs, exactly as the run wrote
   them apart from the path redaction below;
 * `run.json` — the index entry, which is the only thing
@@ -514,7 +517,9 @@ That writes `results/<YYYYMMDDTHHMMSSZ>-<profile>/` containing
 Five things it will not do:
 
 * **Publish an invalid run as a result.** A run whose own verdict is invalid
-  is refused. `--allow-invalid` records it as a diagnostic instead: marked
+  is refused. Failed raw operations, verification checks, and excluded samples
+  also prevent charts, even if the top-level verdict is incorrectly valid.
+  `--allow-invalid` records a declared invalid run as a diagnostic instead: marked
   invalid on every page, with no chart drawn for it at all.
 * **Overwrite a recorded run.** An existing `results/<id>` is an error.
 * **Recompute a measurement.** The JSON and CSV are the ones the run wrote.
@@ -534,7 +539,8 @@ Five things it will not do:
 
 `results/explore.ipynb` loads any recorded run and compares its scenarios —
 elapsed time, store size, transferred bytes and request counts, the
-operations with no measurement, and the correctness checks. Its dependencies
+operations with no measurement, and the raw samples. It renders the saved chart
+specifications with the same Matplotlib module as the exporter. Its dependencies
 are pinned by this flake:
 
 ```
@@ -545,7 +551,10 @@ AMBER_BENCH_RUN=20260912T183000Z-standard \
     --output /tmp/executed.ipynb results/explore.ipynb
 ```
 
-It refuses to compare a run whose own verdict is invalid, prints tables as
+For exported results outside the checkout, set `AMBER_BENCH_RESULTS` to their
+directory and `AMBER_BENCH_REPO` to this checkout.
+
+It rejects invalid reports and failed raw checks, prints tables as
 text and plots as images rather than widgets, and is executed against every
 committed run in CI. Nothing in `results/` needs it: the Markdown and the
 SVG are the readable form.

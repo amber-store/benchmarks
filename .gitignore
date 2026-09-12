@@ -4,3 +4,5 @@
 /result-*
 .direnv/
 .ipynb_checkpoints/
+__pycache__/
+*.py[cod]

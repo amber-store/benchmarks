@@ -34,7 +34,7 @@ fn report_json(valid: bool, extra_summary: &str) -> String {
     "cpu_model": "Test CPU", "cpu_logical_cores": 32,
     "memory_total_bytes": 1073741824,
     "load_average_at_start": [0.5, 0.4, 0.3],
-    "cache_policy": "The page cache was NOT dropped."
+    "cache_policy": "The page cache was NOT dropped: reads are WARM-CACHE numbers."
   }},
   "tools": {{
     "tools": {{
@@ -50,9 +50,13 @@ fn report_json(valid: bool, extra_summary: &str) -> String {
   "statistics_method": "median = lower middle sample",
   "runs": [
     {{ "group": "tree", "scenario": "tree/lifecycle", "backend": "amber-rust", "rep": 0,
+       "ops": [{{"status":"ok"}}],
+       "verifications": [{{"passed":true}}],
        "semantics": {{ "compression": "zstd. Always.", "encryption": "none",
                       "durability": "fsync", "concurrency": "single" }} }},
     {{ "group": "tree", "scenario": "tree/lifecycle", "backend": "git", "rep": 0,
+       "ops": [{{"status":"ok"}}],
+       "verifications": [{{"passed":true}}],
        "semantics": {{ "compression": "zlib", "encryption": "none",
                       "durability": "none", "concurrency": "threads" }} }}
   ],
@@ -264,6 +268,29 @@ fn the_index_is_derived_from_the_recorded_runs_not_appended_to() {
     assert!(idx.contains("r-two"), "{idx}");
 }
 
+/// A reader of the index has to be able to see, without opening a run, what
+/// the run was and under which cache policy it was measured.
+#[test]
+fn the_index_states_profile_repeats_host_and_cache_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let run = run_dir(tmp.path(), true);
+    let results = tmp.path().join("results");
+    publish(&opts(run, results.clone())).unwrap();
+    let idx = std::fs::read_to_string(results.join("README.md")).unwrap();
+    assert!(idx.contains("| profile |"), "{idx}");
+    assert!(idx.contains("| repeats |"), "{idx}");
+    assert!(idx.contains("| read cache |"), "{idx}");
+    assert!(idx.contains("`smoke`"), "the profile is named: {idx}");
+    assert!(idx.contains("32 × Test CPU"), "the host is named: {idx}");
+    // The fixture run did not drop the page cache, so the column has to say
+    // so rather than leave a reader to assume cold reads.
+    assert!(idx.contains("| warm |"), "{idx}");
+    assert!(
+        idx.contains("must not be read as\ncold-cache numbers"),
+        "the one-word column is explained: {idx}"
+    );
+}
+
 /// What gets committed must not carry the directories the run happened to
 /// use, in any artefact — and the numbers must survive that untouched.
 #[test]
@@ -419,10 +446,11 @@ fn blob_scenarios_get_transfer_and_request_charts() {
     );
 
     // The retention caveat travels with the chart that shows it.
-    let (_, svg) = charts(&loaded)
+    let (_, spec) = charts(&loaded)
         .into_iter()
         .find(|(n, _)| n == "blob-nix-closure-elapsed.svg")
         .expect("blob elapsed chart");
+    let svg = serde_json::to_string(&spec).unwrap();
     assert!(svg.contains("not asked for the same thing"), "{svg}");
     assert!(svg.contains("garage"), "the object store is named");
 }
@@ -438,4 +466,25 @@ fn a_chart_file_is_attributed_to_its_own_scenario() {
         plot_scenario("plots/nix-closure-elapsed.svg", &scenarios),
         "nix/closure"
     );
+}
+
+#[test]
+fn a_true_verdict_cannot_hide_failed_raw_evidence() {
+    for kind in ["cross", "verification", "operation", "excluded", "skipped"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let run = run_dir(tmp.path(), true);
+        let mut raw: serde_json::Value = serde_json::from_str(&report_json(true, "")).unwrap();
+        match kind {
+            "cross" => raw["cross_checks"] = serde_json::json!([{"passed": false}]),
+            "verification" => raw["runs"][0]["verifications"][0]["passed"] = false.into(),
+            "operation" => raw["runs"][0]["ops"][0]["status"] = "failed".into(),
+            "excluded" => raw["summary"][0]["excluded_invalid_samples"] = 1.into(),
+            "skipped" => raw["skipped_backends"] = serde_json::json!({"git":"missing"}),
+            _ => unreachable!(),
+        }
+        std::fs::write(run.join("report.json"), serde_json::to_vec(&raw).unwrap()).unwrap();
+        let results = tmp.path().join("results");
+        assert!(publish(&opts(run, results.clone())).is_err(), "{kind}");
+        assert!(!results.exists(), "invalid report created output: {kind}");
+    }
 }
