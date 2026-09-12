@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Formatting, lints and the unit tests: dataset determinism, adapters,
+  # metrics, reports, publishing, cleanup, error handling and the
+  # verification failures themselves.
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  # The real smoke suite: both cores built from the revisions this
+  # repository's flake pins, every backend, the local Garage instance, real
+  # HTTP transfers. A correctness gate, not a performance gate — timings from
+  # a shared runner are not comparable between runs.
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the smoke profile against every backend
+        run: ./run.sh --profile smoke --out "$GITHUB_WORKSPACE/bench-report"
+      - name: Require the run to declare itself valid
+        if: always()
+        run: |
+          set -euo pipefail
+          report="$GITHUB_WORKSPACE/bench-report/report.json"
+          test -f "$report" || { echo "no report was written"; exit 1; }
+          # The harness already exits non-zero when a run is not clean; this
+          # re-checks the artefact itself, so a report that claimed validity
+          # it had not earned would still fail the build.
+          valid=$(jq -r '.validity.valid' "$report")
+          errors=$(jq -r '.errors | length' "$report")
+          skipped=$(jq -r '.skipped_backends | length' "$report")
+          failed_checks=$(jq -r '[.runs[].verifications[] | select(.passed == false)] | length' "$report")
+          failed_cross=$(jq -r '[.cross_checks[] | select(.passed == false)] | length' "$report")
+          excluded=$(jq -r '[.summary[].excluded_invalid_samples] | add // 0' "$report")
+          echo "valid=$valid errors=$errors skipped=$skipped checks_failed=$failed_checks cross_failed=$failed_cross excluded_samples=$excluded"
+          # Every backend the suite knows must have produced measurements.
+          for backend in amber-rust amber-go git restic nix fs-sha256 \
+                         amber-rust-s3 amber-go-s3 restic-s3 git-bundle-s3 nix-binary-cache; do
+            n=$(jq -r --arg b "$backend" '[.summary[] | select(.backend == $b and .ok > 0)] | length' "$report")
+            echo "$backend: $n measured operation(s)"
+            test "$n" -gt 0 || { echo "$backend produced no measurement"; exit 1; }
+          done
+          # Both cores must have been built from a known source revision:
+          # a report that cannot say what it measured is not a result.
+          for core in amber-rust amber-go; do
+            jq -e --arg c "$core" '.tools.tools[$c].source_commit | length == 40' "$report" > /dev/null \
+              || { echo "$core has no recorded source revision"; exit 1; }
+          done
+          # And the two cores must have agreed on their root keys.
+          jq -e '[.cross_checks[] | select(.name == "amber_cores_agree_on_root_keys" and .passed)] | length == 1' "$report" > /dev/null
+          test "$valid" = "true"
+          test "$errors" -eq 0
+          test "$skipped" -eq 0
+          test "$failed_checks" -eq 0
+          test "$failed_cross" -eq 0
+          test "$excluded" -eq 0
+      - name: Publish it the way a recorded result is published
+        if: always()
+        run: |
+          set -euo pipefail
+          nix develop --command \
+            ./target/release/amber-cas-bench publish \
+              --report "$GITHUB_WORKSPACE/bench-report" \
+              --results "$RUNNER_TEMP/published" \
+              --id ci-smoke \
+              --label "CI smoke run: a correctness gate, not a measurement"
+          test -s "$RUNNER_TEMP/published/ci-smoke/README.md"
+          test -d "$RUNNER_TEMP/published/ci-smoke/plots"
+          # Nothing that names the machine it ran on may reach a published
+          # directory.
+          ! grep -rqF "$GITHUB_WORKSPACE" "$RUNNER_TEMP/published"
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-smoke-report
+          path: |
+            bench-report/REPORT.md
+            bench-report/report.json
+            bench-report/*.csv
+          if-no-files-found: warn
+
+  # The notebook has to keep working against the results committed here, and
+  # it has to keep refusing to compare an invalid one.
+  notebook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Execute the notebook against every recorded run
+        run: |
+          set -euo pipefail
+          for run in results/*/run.json; do
+            id=$(basename "$(dirname "$run")")
+            echo "== $id"
+            AMBER_BENCH_RESULTS="$PWD/results" AMBER_BENCH_RUN="$id" \
+              nix develop --command jupyter nbconvert --to notebook --execute \
+                --output "$RUNNER_TEMP/executed-$id.ipynb" results/explore.ipynb
+          done

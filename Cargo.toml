@@ -1,0 +1,34 @@
+[package]
+name = "amber-cas-bench"
+version = "0.1.0"
+edition = "2024"
+license = "LGPL-3.0-only"
+description = "Reproducible comparison benchmarks for the Amber-Store cores against Git, Nix and restic"
+publish = false
+
+# This package is intentionally *not* a member of the amber-store-core
+# manifest: the harness treats every store under test as a black box driven
+# through its shipped command line, so it must not link the Rust core.
+
+[lib]
+name = "amber_cas_bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "amber-cas-bench"
+path = "src/main.rs"
+
+[dependencies]
+blake3 = "1"
+clap = { version = "4", features = ["derive", "env"] }
+hex = "0.4"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"

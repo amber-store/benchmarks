@@ -1,0 +1,6 @@
+/target/
+/benchmark-results/
+/result
+/result-*
+.direnv/
+.ipynb_checkpoints/
