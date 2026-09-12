@@ -11,8 +11,8 @@ use amber_store_core::refstore;
 
 use crate::env::Env;
 use crate::fixtures::{
-    digest, digest_strings, fold_bool, fold_bytes, fold_i64, fold_key, fold_str, key_bytes,
-    new_fold, sink_bytes,
+    digest, digest_strings, fold_bool, fold_bytes, fold_i64, fold_key, fold_str, fold_u64,
+    key_bytes, new_fold, sink_bytes,
 };
 use crate::harness::{Case, Dims, Recorder, State};
 use crate::stores::{
