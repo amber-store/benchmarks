@@ -834,40 +834,30 @@ fn chart(
         return None;
     }
 
+    // Each footer entry is one sentence, left unwrapped: the renderer wraps
+    // it to the width of the figure it is drawing, and wrapping it twice
+    // leaves stray one-word lines.
     let mut footer = Vec::new();
     for line in extra_notes {
-        footer.extend(plot::wrap(line, 150));
+        footer.push((*line).to_string());
     }
-    footer.extend(plot::wrap(
-        &format!(
-            "Sample count is on every bar. {} Repetitions requested: {}.",
-            r.statistics_method, r.repeats
-        ),
-        150,
+    footer.push(format!(
+        "Sample count is on every bar. {} Repetitions requested: {}.",
+        r.statistics_method, r.repeats
     ));
     if r.repeats < 5 {
-        footer.extend(plot::wrap(
-            &format!(
-                "Small sample: {} repetition(s) per bar. Dispersion is in \
-                 summary.csv (cv) and every raw sample is in samples.csv. \
-                 Treat a difference of the same order as the spread as \
-                 indicative only.",
-                r.repeats
-            ),
-            150,
+        footer.push(format!(
+            "Small sample: {} repetition(s) per bar. Dispersion is in \
+             summary.csv (cv) and every raw sample is in samples.csv. Treat a \
+             difference of the same order as the spread as indicative only.",
+            r.repeats
         ));
     }
-    footer.extend(plot::wrap(
-        &format!("Cache policy: {}", r.host.cache_policy),
-        150,
-    ));
+    footer.push(format!("Cache policy: {}", r.host.cache_policy));
     if scenario.starts_with("blob/")
         && let Some(b) = &r.blob
     {
-        footer.extend(plot::wrap(
-            &format!("Object store: {} ({}).", b.service, b.shaping),
-            150,
-        ));
+        footer.push(format!("Object store: {} ({}).", b.service, b.shaping));
     }
     for backend in &backends {
         if let Some(s) = semantics(r, scenario, backend) {
@@ -881,24 +871,21 @@ fn chart(
             if let Some(t) = &s.transport {
                 line.push_str(&format!(" | transport {}", first_clause(t)));
             }
-            footer.extend(plot::wrap(&line, 150));
+            footer.push(line);
         }
     }
     if ops.iter().any(|o| o == "retention_cleanup") {
-        footer.extend(plot::wrap(
+        footer.push(
             "retention_cleanup is the one operation here where the backends \
              are not asked for the same thing; what each one kept is in \
              REPORT.md and in counters.csv (retained_references). These bars \
-             are not a ranking.",
-            150,
-        ));
+             are not a ranking."
+                .to_string(),
+        );
     }
-    footer.extend(plot::wrap(
-        &format!(
-            "Run {} on {} ({} logical cores), profile {}, seed {}.",
-            r.run_id, r.host.cpu_model, r.host.cpu_logical_cores, r.profile.name, r.seed
-        ),
-        150,
+    footer.push(format!(
+        "Run {} on {} ({} logical cores), profile {}, seed {}.",
+        r.run_id, r.host.cpu_model, r.host.cpu_logical_cores, r.profile.name, r.seed
     ));
 
     Some(BarChart {

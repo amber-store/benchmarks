@@ -80,39 +80,3 @@ impl BarChart {
         Ok(output.stdout_text())
     }
 }
-
-pub fn esc(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            // Control characters are not valid XML 1.0 content.
-            c if (c as u32) < 0x20 && c != '\t' => out.push(' '),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// Wraps `text` to `width` characters, for footer lines.
-pub fn wrap(text: &str, width: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut line = String::new();
-    for word in text.split_whitespace() {
-        if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > width {
-            out.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    if !line.is_empty() {
-        out.push(line);
-    }
-    out
-}
