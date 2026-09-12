@@ -601,15 +601,20 @@ class TestPairing(unittest.TestCase):
         self.assertNotIn('entries_per_s', row)
         self.assertIn('ops_per_s', row)
 
-    def test_entry_and_object_rates_use_the_recorded_dimensions(self):
+    def test_rates_count_work_instead_of_tree_shape(self):
+        for op, rate in [('fstree.decode_dir_leaf', 'entries_per_s'),
+                         ('packstore.get', 'objects_per_s')]:
+            g = doc('go')
+            for sample_row in g['samples']:
+                sample_row.update(op=op, wall_ns=1_000_000_000, ops=64 * 1024,
+                                  dims={'entries': 1024, 'items': 64, 'objects': 3})
+            row = next(iter(report.summarize(report.collect(g)).values()))
+            self.assertEqual(row[rate]['median'], 65536)
         g = doc('go')
-        for s in g['samples']:
-            s['wall_ns'] = 1_000_000_000
-            s['dims'] = dict(DIMS, entries=7, objects=3)
-        summary = report.summarize(report.collect(validation.merge_passes([g], 'go')))
-        row = list(summary.values())[0]
-        self.assertAlmostEqual(row['entries_per_s']['median'], 7.0)
-        self.assertAlmostEqual(row['objects_per_s']['median'], 3.0)
+        for sample_row in g['samples']:
+            sample_row.update(op='fstree.lookup_entry', dims={'entries': 40000})
+        row = next(iter(report.summarize(report.collect(g)).values()))
+        self.assertNotIn('entries_per_s', row)
 
     def test_variation_is_dispersion_relative_to_the_median(self):
         g = doc('go')
@@ -658,6 +663,8 @@ class TestScaling(unittest.TestCase):
         row = {'dims': {'item_bytes': 64, 'items': 10, 'sweep': 'item_bytes'}}
         self.assertEqual(report.sweep_total('item_bytes', row), 640)
         self.assertEqual(report.sweep_total('entries', {'dims': {'entries': 5}}), 5)
+        self.assertEqual(report.sweep_total('entries', {'dims': {'entries': 1024, 'items': 64}}), 65536)
+        self.assertEqual(report.sweep_total('depth', {'dims': {'depth': 12, 'items': 256}}), 3072)
 
 
 class TestOutput(unittest.TestCase):

@@ -17,6 +17,7 @@ which takes a finished chart specification and recomputes nothing.
 import argparse
 import csv
 import importlib.util
+import hashlib
 import json
 import os
 import sys
@@ -50,6 +51,18 @@ BYTES_KIND_LABEL = {
     'included': 'included payload bytes',
     'encoded': 'encoded bytes',
 }
+
+
+def generator_digest():
+    """Identify post-processing code independently of the measured harness."""
+    digest = hashlib.sha256()
+    for relative in ('core-ops/report/report.py', 'core-ops/report/stats.py',
+                     'core-ops/report/validate.py', 'core-ops/coverage/matrix.py',
+                     'python/amber_bench_plot.py'):
+        digest.update(relative.encode() + b'\0')
+        with open(os.path.join(ROOT, relative), 'rb') as source:
+            digest.update(source.read())
+    return digest.hexdigest()
 
 
 def load(path):
@@ -106,10 +119,24 @@ def collect(doc):
         if s['bytes'] > 0:
             e['bytes_per_s'].append(s['bytes'] * 1e9 / wall)
         dims = s.get('dims') or {}
-        if dims.get('entries'):
-            e['entries_per_s'].append(dims['entries'] * 1e9 / wall)
-        if dims.get('objects'):
-            e['objects_per_s'].append(dims['objects'] * 1e9 / wall)
+        # Shape metadata is not a count of processed work. These cases count
+        # entries or objects explicitly in their recorded operation count.
+        entry_ops = {
+            'fstree.encode_dir_leaf', 'fstree.decode_dir_leaf',
+            'fstree.encode_dir_node', 'fstree.decode_dir_node',
+            'fstree.encode_file_node', 'fstree.decode_file_node',
+            'fstree.dir_builder', 'fstree.index_builder_file',
+            'fstree.collect_entries', 'fstree.list_entries',
+        }
+        object_ops = {
+            'fstree.check_complete', 'fstree.reachable_keys',
+            'packstore.put', 'packstore.get', 'packstore.has',
+            'packstore.scan_index',
+        }
+        if s['op'] in entry_ops:
+            e['entries_per_s'].append(s['ops'] * 1e9 / wall)
+        if s['op'] in object_ops:
+            e['objects_per_s'].append(s['ops'] * 1e9 / wall)
     return out
 
 
@@ -171,18 +198,13 @@ def pair(go_cases, rust_cases, go_sum, rust_sum):
 
 
 def sweep_total(field, r):
-    """The swept dimension's total over one measured call.
+    """The swept dimension's total over the batch.
 
-    `item_bytes` is a per-item size, so the call covers `item_bytes * items`
-    of it; every other dimension already describes the whole call. Dividing
-    the interval by the right one of those is what makes the per-unit column
-    a per-unit column rather than two different things in one table.
+    Explicit item counts describe repeated codec calls or path lookups.
+    Workloads without an item count traverse one tree or build one index.
     """
     d = r['dims'] or {}
-    v = d.get(field, 0)
-    if field == 'item_bytes':
-        return v * max(d.get('items', 1), 1)
-    return v
+    return d.get(field, 0) * max(d.get('items', 1), 1)
 
 
 def sweeps(paired):
@@ -996,6 +1018,7 @@ def main():
 
     report = {
         'schema': REPORT_SCHEMA,
+        'report_generator_sha256': generator_digest(),
         'profile': go['config'],
         'identity': identity,
         'validity': validity,
