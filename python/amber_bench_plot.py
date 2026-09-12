@@ -1,4 +1,10 @@
-"""Render recorded chart specifications with Matplotlib, without recomputing statistics."""
+"""Render recorded chart specifications with Matplotlib.
+
+The renderer takes a finished chart specification -- categories, series and
+cells that already carry their numbers -- and recomputes nothing. Deciding
+what may be compared and computing every statistic is ``report/report.py``'s
+job; this file only draws.
+"""
 import io
 import json
 import math
@@ -11,34 +17,6 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 PALETTE = ['#4477aa', '#ee6677', '#228833', '#ccbb44', '#66ccee', '#aa3377', '#bbbbbb']
-
-
-def validate_report(report):
-    """Reject failed or inconsistent reports before comparing performance."""
-    if not report.get('validity', {}).get('valid'):
-        raise ValueError('The report is invalid; performance plots are disabled.')
-    if report.get('errors') or report.get('skipped_backends') or report.get('tools', {}).get('missing'):
-        raise ValueError('The report contains errors or missing backends.')
-    if not isinstance(report.get('cross_checks'), list):
-        raise ValueError('Missing cross-core checks.')
-    for check in report['cross_checks']:
-        if check.get('passed') is not True:
-            raise ValueError('A cross-core check failed.')
-    runs = report.get('runs', [])
-    if not runs:
-        raise ValueError('No raw runs.')
-    for run in runs:
-        if run.get('error') or not run.get('verifications') or not run.get('ops'):
-            raise ValueError('Incomplete raw run.')
-        if any(v.get('passed') is not True for v in run['verifications']):
-            raise ValueError('A verification failed.')
-        if any(op.get('status') not in ('ok', 'unsupported')
-               or (op.get('status') == 'unsupported' and op.get('wall_ns') is not None)
-               for op in run['ops']):
-            raise ValueError('A raw operation failed.')
-    if any(row.get('failed', 0) or row.get('excluded_invalid_samples', 0)
-           for row in report.get('summary', [])):
-        raise ValueError('Summary includes invalid samples.')
 
 
 def figure(spec):

@@ -1,10 +1,9 @@
 /target/
 core-ops/rust/target/
 core-ops/coverage/goexports/target/
-/benchmark-results/
 /result
 /result-*
 .direnv/
-.ipynb_checkpoints/
 __pycache__/
 *.py[cod]
+/core-ops/go/go
