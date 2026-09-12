@@ -14,26 +14,31 @@ func tarCases(e *Env) []Case {
 	return []Case{
 		{
 			Group: "tar", Op: "tarexport.write", Workload: "fixture-tree", Threads: 1,
-			Ops: 1, Bytes: int64(len(fx.TarBytes)),
-			Setup: func(*Env) any { return nil },
+			Ops: int(fx.V1Included.Files), Bytes: int64(len(fx.TarBytes)), BytesKind: BytesEncoded,
+			Dims:          Dims{Files: fx.V1Included.Files, Entries: fx.V1Included.Files, Content: "tree"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return nil },
 			Run: func(en *Env, _ any) uint64 {
 				var c countingWriter
 				if err := tarWrite(&c, en.fx.TreeRoot, en.fx.TreeMem.get); err != nil {
 					panic(err)
 				}
-				return uint64(c.n)
+				return foldI64(newFold(), c.n)
 			},
 		},
 		{
 			Group: "tar", Op: "tarextract.extract", Workload: "fixture-tree", Threads: 1,
-			Ops: 1, Bytes: int64(len(fx.TarBytes)), PerRep: true,
-			Setup: func(en *Env) any { return workDir(en, "tar-extract") },
+			Ops: int(fx.V1Included.Files), Bytes: int64(len(fx.TarBytes)), BytesKind: BytesEncoded,
+			Dims:          Dims{Files: fx.V1Included.Files, Entries: fx.V1Included.Files, Content: "tree"},
+			PerRep:        true,
+			CrossChecksum: true,
+			Setup:         func(en *Env) any { return workDir(en, "tar-extract") },
 			Run: func(en *Env, s any) uint64 {
 				dir := s.(string)
 				if err := tarextract.Extract(bytes.NewReader(en.fx.TarBytes), dir); err != nil {
 					panic(err)
 				}
-				return uint64(len(en.fx.TarBytes))
+				return foldI64(newFold(), int64(len(en.fx.TarBytes)))
 			},
 			Free: func(_ *Env, s any) { _ = os.RemoveAll(s.(string)) },
 		},
@@ -72,19 +77,27 @@ func tarChecks(e *Env) {
 	e.want("tar", "tarextract.extract", "tar/extract-manifest", merr == nil,
 		fmt.Sprintf("manifest of the extracted tree: %v", merr), m)
 
-	same := true
-	var detail string
-	for _, rel := range []string{"data/d000/f000.bin", "data/d000/keep.tmp", "big.bin", "wide/w000000.bin"} {
-		want, err1 := os.ReadFile(filepath.Join(fx.TreeV1, rel))
-		got, err2 := os.ReadFile(filepath.Join(dir, rel))
-		if err1 != nil || err2 != nil || !bytes.Equal(want, got) {
-			same = false
-			detail = fmt.Sprintf("%s: %v / %v", rel, err1, err2)
-			break
+	// The whole extracted tree is compared with the listing the harness
+	// derived from the source tree and the fixture's own ignore rules --
+	// every path, its type, its permissions, its size, its mtime, its
+	// content digest and its symlink target. A handful of spot-checked
+	// files would not be a restore verification, and two cores agreeing
+	// with each other would prove only that they agree.
+	got, gerr := manifestLines(dir, nil)
+	want := fx.V1IncludedManifest
+	same := gerr == nil && len(want) > 0 && len(got) == len(want)
+	if same {
+		for i := range want {
+			if want[i] != got[i] {
+				same = false
+				break
+			}
 		}
 	}
-	e.want("tar", "tarextract.extract", "tar/extract-content-matches-source", same,
-		"an extracted file differs from the source tree: "+detail, "ok")
+	e.want("tar", "tarextract.extract", "tar/extract-is-the-included-source-tree", same,
+		fmt.Sprintf("the extracted tree is not the included source tree: %v; %s",
+			gerr, firstDifference(want, got)),
+		digestStrings(got))
 
 	// Symlinks survive the round trip.
 	link, lerr := os.Readlink(filepath.Join(dir, "links", "ln000"))

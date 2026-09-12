@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,24 +22,131 @@ import (
 // payloadSet is a batch of byte strings a short operation is run over. Short
 // operations are always measured over a whole set: one call is far below the
 // clock's resolution, a set of a few thousand is not.
+//
+// A set is one point in the (size, content) grid: its Dims are what the
+// report sweeps, and its Name is only a label for that point.
 type payloadSet struct {
-	Name  string
-	Items [][]byte
-	Bytes int64
+	Name      string
+	Items     [][]byte
+	Bytes     int64
+	ItemBytes int64
+	Content   string
 }
 
-func newPayloadSet(name string, count, size int, seed uint64, text bool) payloadSet {
-	ps := payloadSet{Name: name, Items: make([][]byte, count)}
+// dims renders the set as workload dimensions.
+func (ps payloadSet) dims() Dims {
+	return Dims{ItemBytes: ps.ItemBytes, Items: int64(len(ps.Items)), Content: ps.Content}
+}
+
+// limit returns the leading part of the set whose total is at most max bytes,
+// for operations that write every item to disk and would otherwise dominate
+// the run. At least one item is always kept.
+func (ps payloadSet) limit(max int64) payloadSet {
+	if ps.Bytes <= max || ps.ItemBytes == 0 {
+		return ps
+	}
+	n := int(max / ps.ItemBytes)
+	if n < 1 {
+		n = 1
+	}
+	if n > len(ps.Items) {
+		n = len(ps.Items)
+	}
+	out := ps
+	out.Items = ps.Items[:n]
+	out.Bytes = int64(n) * ps.ItemBytes
+	return out
+}
+
+// payloadSizes are the object-size classes every size-sensitive operation is
+// swept over: an empty object, a tiny one, a kilobyte, a megabyte and a
+// large multi-megabyte one. The classes are absolute sizes, not fractions of
+// the profile, so the same workload means the same thing in both profiles
+// and a scaling plot from a quick run is comparable with a standard one.
+var payloadSizes = []struct {
+	Name  string
+	Bytes int
+}{
+	{"empty", 0},
+	{"tiny-64B", 64},
+	{"4KiB", 4 << 10},
+	{"1MiB", 1 << 20},
+	{"large-8MiB", 8 << 20},
+}
+
+// payloadContents are the content kinds crossed with those sizes:
+//
+//	random     incompressible, every item distinct — the hash and the store
+//	           both see new bytes and no encoder can win
+//	text       compressible, every item distinct — the record encoder's zstd
+//	           path engages and the stored size is smaller than the logical
+//	duplicate  every item byte-identical — a content-addressed store sees one
+//	           object and the rest are dedup hits
+//
+// The empty size is not crossed with these: a zero-length object has no
+// content to be random, compressible or duplicated, so the grid has one
+// `empty` point rather than three identical ones.
+var payloadContents = []string{"random", "text", "duplicate"}
+
+func newPayloadSet(name, content string, count, size int, seed uint64) payloadSet {
+	ps := payloadSet{
+		Name: name, Content: content, ItemBytes: int64(size),
+		Items: make([][]byte, count),
+	}
 	for i := range ps.Items {
 		s := seed + uint64(i)*0x100000001B3
-		if text {
+		switch content {
+		case "text":
 			ps.Items[i] = compressibleBytes(s, size)
-		} else {
+		case "duplicate":
+			// Every item is the same bytes, so the set has one distinct
+			// object in it however many items it holds.
+			if i == 0 {
+				ps.Items[i] = randomBytes(seed, size)
+			} else {
+				ps.Items[i] = ps.Items[0]
+			}
+		default:
 			ps.Items[i] = randomBytes(s, size)
 		}
 		ps.Bytes += int64(size)
 	}
 	return ps
+}
+
+// buildPayloadMatrix builds the whole (size, content) grid once. Every set
+// holds about Profile.PayloadTotal bytes, so the grid costs the same at
+// every size and a per-byte rate is comparable across the row.
+func buildPayloadMatrix(p Profile) []payloadSet {
+	var out []payloadSet
+	for i, sz := range payloadSizes {
+		if sz.Bytes == 0 {
+			out = append(out, newPayloadSet("empty", "empty", p.BatchOps*4, 0, p.Seed+10))
+			continue
+		}
+		items := int(p.PayloadTotal / int64(sz.Bytes))
+		if items < 1 {
+			items = 1
+		}
+		if items > 16384 {
+			items = 16384
+		}
+		for j, content := range payloadContents {
+			seed := p.Seed + 10 + uint64(i)*97 + uint64(j)*7919
+			out = append(out, newPayloadSet(sz.Name+"-"+content, content, items, sz.Bytes, seed))
+		}
+	}
+	return out
+}
+
+// payloadNamed returns one point of the grid by name.
+func payloadNamed(sets []payloadSet, name string) payloadSet {
+	for _, ps := range sets {
+		if ps.Name == name {
+			return ps
+		}
+	}
+	panic("no payload set named " + name)
 }
 
 // memStore is the in-memory object bag the pure tree cases read through. It
@@ -95,7 +204,11 @@ type Fixtures struct {
 	CorpusRandom []byte
 	CorpusText   []byte
 
-	// Batched payloads for the short codec operations.
+	// Payloads is the whole (size, content) grid: every size class crossed
+	// with every content kind. Size-sensitive operations are swept over it.
+	Payloads []payloadSet
+	// Named points of that grid, for the cases and checks that need one
+	// particular shape rather than the sweep.
 	Tiny  payloadSet // 64 B, random
 	Small payloadSet // 4 KiB, random
 	Text  payloadSet // 4 KiB, compressible
@@ -114,7 +227,14 @@ type Fixtures struct {
 	XattrsSmallEnc []byte
 	XattrsLargeEnc []byte
 
-	// fstree codec inputs and their encodings.
+	// fstree codec inputs and their encodings, swept over entry counts.
+	// EntrySets crosses the entry-count sweep with two structured
+	// variants: one whose entries carry extended attributes, and one that
+	// is the 128-entry set with a single entry rewritten, which is the
+	// partial-change case a real incremental update produces.
+	EntrySets        []entrySet
+	PairSets         []pairSet
+	ChildSets        []childSet
 	EntriesSmall     []fstree.Entry
 	EntriesLarge     []fstree.Entry
 	PairsSmall       []fstree.DirPair
@@ -130,15 +250,29 @@ type Fixtures struct {
 	ItemEncodings    [][]byte
 
 	// In-memory trees.
-	Mem             *memStore
-	WideRoot        key.Key
-	WideNames       [][]byte // present names, ascending
-	MissName        []byte   // a name that is not in the wide directory
-	DeepRoot        key.Key
-	DeepPath        string
-	ShallowRoot     key.Key
-	FileRoot        key.Key
-	FileBytes       int64
+	Mem *memStore
+	// Dirs is the directory-width sweep: one built directory per entry
+	// count in Profile.TreeWidths, all in Mem.
+	Dirs []memDir
+	// Chains is the path-depth sweep: one chain of nested directories per
+	// depth in Profile.TreeDepths.
+	Chains []memChain
+	// FileIndexes is the file-index fan-out sweep: one multi-level file
+	// node per child count in Profile.FanOuts.
+	FileIndexes []memFileIndex
+	WideRoot    key.Key
+	WideNames   [][]byte // present names, ascending
+	MissName    []byte   // a name that is not in the wide directory
+	DeepRoot    key.Key
+	DeepPath    string
+	DeepDepth   int
+	ShallowRoot key.Key
+	FileRoot    key.Key
+	FileBytes   int64
+	// FileChunks is how many content chunks the corpus file really split
+	// into, counted outside every measured interval so a per-chunk rate has
+	// an exact denominator.
+	FileChunks      int64
 	IncompleteRoot  key.Key // a wide tree with one Blob leaf removed
 	IncompleteStore *memStore
 
@@ -148,14 +282,35 @@ type Fixtures struct {
 	// IngestTemplate is a packstore that already holds the V1 tree, so the
 	// incremental-change case measures a re-ingest against real dedup hits.
 	IngestTemplate string
-	TreeBytes      int64
-	TreeFiles      int64
-	IgnoreDir      string
+	// TreeBytes and TreeFiles are what writeFixtureTree laid down, ignored
+	// files included. They size the fixture; they are *not* a rate
+	// denominator, because ingest does not include all of it.
+	TreeBytes int64
+	TreeFiles int64
+	// Exact per-tree counts, measured outside every timed interval with the
+	// core's own scan, so each rate has the denominator that belongs to it:
+	// a filtered walk, an unfiltered walk and the changed successor tree
+	// cover different files and different bytes.
+	V1Included   treeCounts // .amberignore applied — what ingest really covers
+	V1Unfiltered treeCounts // ignore rules disabled — strictly more
+	V2Included   treeCounts // the successor tree, .amberignore applied
+	// V1IncludedManifest is the listing the restored tree must reproduce:
+	// the source tree restricted to the paths the fixture's own ignore
+	// rules keep, computed by the harness rather than by either core.
+	V1IncludedManifest []string
+	IgnoreDir          string
 
-	// Pack fixtures.
+	// Pack fixtures. PackObjects is the object population both cores
+	// encode; WirePack and WireRecords are *this* core's own encoding of
+	// it, which is what the writer cases are measured producing and whose
+	// size the report states per core.
 	PackObjects []fstree.Object
 	WirePack    []byte
 	WireRecords [][]byte
+	// Wire holds every producer's pack, read from the shared wire
+	// directory. Both drivers load the same files, so the reader and
+	// decoder cases are measured on byte-identical input.
+	Wire []WirePack
 
 	// Store templates: copied per repetition by the destructive cases.
 	StoreTemplate   string // packstore with StoreObjects objects over several segments
@@ -171,6 +326,10 @@ type Fixtures struct {
 	InboxTemplate   string // inbox directory holding InboxPacks staged entries
 	InboxPacks      [][]byte
 	InboxRoots      []key.Key
+	// InboxLogicalBytes is the payload the staged packs carry, which is the
+	// same in both cores; the packs' encoded sizes are not, and are
+	// reported per core instead of used as a shared denominator.
+	InboxLogicalBytes int64
 
 	// Reference records.
 	RefRecord    reference.Reference
@@ -189,6 +348,14 @@ type Fixtures struct {
 	RO      *storeHandle
 	ROLocs  []recordLoc
 	ROSegID uint64
+}
+
+// treeCounts is the exact extent of one on-disk tree as an ingest walk sees
+// it: how many files it covers and how many logical bytes those files hold.
+// Both numbers are taken outside every measured interval.
+type treeCounts struct {
+	Files int64 `json:"files"`
+	Bytes int64 `json:"bytes"`
 }
 
 // recordLoc is one record's position: the sealed segment it lives in and its
@@ -213,12 +380,12 @@ func buildFixtures(e *Env) *Fixtures {
 	fx.CorpusRandom = randomBytes(seed+1, int(p.CorpusBytes))
 	fx.CorpusText = compressibleBytes(seed+2, int(p.CorpusBytes))
 
-	batch := p.BatchOps
-	fx.Tiny = newPayloadSet("tiny-64B-random", batch, 64, seed+10, false)
-	fx.Small = newPayloadSet("small-4KiB-random", maxInt(batch/8, 32), 4<<10, seed+11, false)
-	fx.Text = newPayloadSet("small-4KiB-text", maxInt(batch/8, 32), 4<<10, seed+12, true)
-	fx.Large = newPayloadSet("large-1MiB-text", maxInt(batch/256, 4), 1<<20, seed+13, true)
-	fx.Rand = newPayloadSet("large-1MiB-random", maxInt(batch/256, 4), 1<<20, seed+14, false)
+	fx.Payloads = buildPayloadMatrix(p)
+	fx.Tiny = payloadNamed(fx.Payloads, "tiny-64B-random")
+	fx.Small = payloadNamed(fx.Payloads, "4KiB-random")
+	fx.Text = payloadNamed(fx.Payloads, "4KiB-text")
+	fx.Large = payloadNamed(fx.Payloads, "1MiB-text")
+	fx.Rand = payloadNamed(fx.Payloads, "1MiB-random")
 
 	buildKeyFixtures(fx, p)
 	buildXattrFixtures(fx, p)
@@ -311,6 +478,27 @@ func entryFor(i int, seed uint64, withXattrs []byte) fstree.Entry {
 	return e
 }
 
+// entrySet, pairSet and childSet are the points of the node-codec sweeps:
+// one encoded node per entry count, with the content kind that produced it.
+type entrySet struct {
+	Name    string
+	Content string
+	Entries []fstree.Entry
+	Enc     []byte
+}
+
+type pairSet struct {
+	Name  string
+	Pairs []fstree.DirPair
+	Enc   []byte
+}
+
+type childSet struct {
+	Name string
+	Keys []key.Key
+	Enc  []byte
+}
+
 func buildCodecFixtures(fx *Fixtures, p Profile) {
 	for i := 0; i < 8; i++ {
 		fx.EntriesSmall = append(fx.EntriesSmall, entryFor(i, p.Seed+40, nil))
@@ -359,6 +547,51 @@ func buildCodecFixtures(fx *Fixtures, p Profile) {
 	fx.EncFileNodeSmall = mustV(fstree.EncodeFileNode(fx.ChildrenSmall)).Bytes
 	fx.EncFileNodeLarge = mustV(fstree.EncodeFileNode(fx.ChildrenLarge)).Bytes
 
+	// --- the node-codec sweeps -------------------------------------------
+	// Entry count is the dimension; the plain sets vary only in how many
+	// entries they hold. Two further points are structured variants at a
+	// fixed count: one whose entries carry extended attributes, and one
+	// that is the 128-entry set with a single entry's content key
+	// rewritten -- the shape an incremental update actually produces.
+	addEntries := func(name, content string, es []fstree.Entry) {
+		fx.EntrySets = append(fx.EntrySets, entrySet{
+			Name: name, Content: content, Entries: es,
+			Enc: mustV(fstree.EncodeDirLeaf(es)).Bytes,
+		})
+	}
+	for _, n := range []int{8, 128, 1024} {
+		es := make([]fstree.Entry, 0, n)
+		for i := 0; i < n; i++ {
+			es = append(es, entryFor(i, p.Seed+40, nil))
+		}
+		addEntries(fmt.Sprintf("entries-%d", n), "structured", es)
+	}
+	addEntries("entries-128-with-xattrs", "structured", fx.EntriesLarge)
+	changed := make([]fstree.Entry, len(fx.EntriesLarge))
+	copy(changed, fx.EntriesLarge)
+	one := changed[len(changed)/2]
+	var h [32]byte
+	copy(h[:], randomBytes(p.Seed+41, 32))
+	ck := mustV(key.NewFromHash(key.Blob, 4242, h))
+	one.ContentKey = keyBytes(ck)
+	changed[len(changed)/2] = one
+	addEntries("entries-128-partial-change", "partial-change", changed)
+
+	for _, n := range []int{8, 128, 1024} {
+		ps := mkPairs(n)
+		fx.PairSets = append(fx.PairSets, pairSet{
+			Name: fmt.Sprintf("pairs-%d", n), Pairs: ps,
+			Enc: mustV(fstree.EncodeDirNode(ps)).Bytes,
+		})
+	}
+	for _, n := range p.FanOuts {
+		ks := mkChildren(n)
+		fx.ChildSets = append(fx.ChildSets, childSet{
+			Name: fmt.Sprintf("children-%d", n), Keys: ks,
+			Enc: mustV(fstree.EncodeFileNode(ks)).Bytes,
+		})
+	}
+
 	// The item chunker decides boundaries on the canonical encoding of one
 	// item; feed it the same encodings the builders would.
 	for i := 0; i < p.BatchOps; i++ {
@@ -368,9 +601,42 @@ func buildCodecFixtures(fx *Fixtures, p Profile) {
 	}
 }
 
+// memDir is one point of the directory-width sweep: a real prolly tree of
+// Entries entries, with every name it holds and one that it does not.
+type memDir struct {
+	Entries  int
+	Root     key.Key
+	Names    [][]byte // present names, ascending
+	MissName []byte
+	// Objects is how many stored objects the directory's own encoding came
+	// to — the leaves, the index levels and the blobs the entries point at
+	// — counted outside every measured interval.
+	Objects int64
+}
+
+// memChain is one point of the path-depth sweep: Depth nested directories
+// with a resolvable path through all of them.
+type memChain struct {
+	Depth int
+	Root  key.Key
+	Path  string
+}
+
+// memFileIndex is one point of the file-index fan-out sweep.
+type memFileIndex struct {
+	Children int
+	Root     key.Key
+	Keys     []key.Key
+}
+
 // buildMemTrees builds the in-memory directory and file trees the read paths
-// walk: one wide directory (a real prolly tree with index levels), one deep
-// chain of directories, one shallow directory, and one multi-level file.
+// walk. Three dimensions are swept independently, each with the others held
+// fixed, so a scaling plot reads one variable at a time:
+//
+//   - directory width, over Profile.TreeWidths, for the builders, the
+//     lookups, the listing and the traversals;
+//   - path depth, over Profile.TreeDepths, for path resolution;
+//   - file-index fan-out, over Profile.FanOuts, for the file builders.
 func buildMemTrees(e *Env, fx *Fixtures) {
 	p := e.Profile
 	fx.Mem = newMemStore()
@@ -388,7 +654,8 @@ func buildMemTrees(e *Env, fx *Fixtures) {
 		return en
 	}
 
-	build := func(n int, seed uint64) (key.Key, [][]byte) {
+	build := func(n int, seed uint64) (key.Key, [][]byte, int64) {
+		before := fx.Mem.len()
 		db := fstree.NewDirBuilder(ic)
 		names := make([][]byte, 0, n)
 		for i := 0; i < n; i++ {
@@ -398,40 +665,75 @@ func buildMemTrees(e *Env, fx *Fixtures) {
 		}
 		root, err := db.Finish(fx.Mem.put)
 		must(err)
-		return root, names
+		return root, names, int64(fx.Mem.len() - before)
 	}
 
-	fx.WideRoot, fx.WideNames = build(p.SyntheticWide, p.Seed+70)
-	fx.MissName = []byte("entry-zzzzzzzz")
-	fx.ShallowRoot, _ = build(16, p.Seed+71)
-
-	// A chain of directories, each holding the next one plus a little noise,
-	// so path resolution really descends TreeDepth levels.
-	child := fx.ShallowRoot
-	var comps []string
-	for d := p.TreeDepth - 1; d >= 0; d-- {
-		db := fstree.NewDirBuilder(ic)
-		name := fmt.Sprintf("level%03d", d)
-		ck := child
-		// Entries must be added in bytewise name order: "entry-..." sorts
-		// before "level...".
-		must(db.AddEntry(fx.Mem.put, storedEntry(d, p.Seed+72)))
-		must(db.AddEntry(fx.Mem.put, fstree.Entry{
-			Name: []byte(name), Mode: modeDir, UID: 1000, GID: 1000,
-			Mtime: 1_700_000_000_000_000_000, ContentKey: append([]byte(nil), ck[:]...),
-		}))
-		root, err := db.Finish(fx.Mem.put)
-		must(err)
-		child = root
-		comps = append([]string{name}, comps...)
+	// --- directory width ------------------------------------------------
+	for i, n := range p.TreeWidths {
+		root, names, objs := build(n, p.Seed+70+uint64(i)*131)
+		fx.Dirs = append(fx.Dirs, memDir{
+			Entries: n, Root: root, Names: names,
+			MissName: []byte("entry-zzzzzzzz"), Objects: objs,
+		})
 	}
-	fx.DeepRoot = child
-	fx.DeepPath = filepath.Join(comps...)
+	widest := fx.Dirs[len(fx.Dirs)-1]
+	fx.WideRoot, fx.WideNames = widest.Root, widest.Names
+	fx.MissName = widest.MissName
+	fx.ShallowRoot = fx.Dirs[0].Root
+
+	// --- path depth -------------------------------------------------------
+	// Each chain is a stack of directories, each holding the next one plus a
+	// little noise, so resolution really descends every level.
+	chainOf := func(depth int, seed uint64) memChain {
+		child := fx.Dirs[0].Root
+		var comps []string
+		for d := depth - 1; d >= 0; d-- {
+			db := fstree.NewDirBuilder(ic)
+			name := fmt.Sprintf("level%03d", d)
+			ck := child
+			// Entries must be added in bytewise name order: "entry-..."
+			// sorts before "level...".
+			must(db.AddEntry(fx.Mem.put, storedEntry(d, seed)))
+			must(db.AddEntry(fx.Mem.put, fstree.Entry{
+				Name: []byte(name), Mode: modeDir, UID: 1000, GID: 1000,
+				Mtime: 1_700_000_000_000_000_000, ContentKey: append([]byte(nil), ck[:]...),
+			}))
+			root, err := db.Finish(fx.Mem.put)
+			must(err)
+			child = root
+			comps = append([]string{name}, comps...)
+		}
+		return memChain{Depth: depth, Root: child, Path: filepath.Join(comps...)}
+	}
+	for i, d := range p.TreeDepths {
+		fx.Chains = append(fx.Chains, chainOf(d, p.Seed+72+uint64(i)*211))
+	}
+	deepest := fx.Chains[len(fx.Chains)-1]
+	fx.DeepRoot, fx.DeepPath, fx.DeepDepth = deepest.Root, deepest.Path, deepest.Depth
+
+	// --- file-index fan-out ----------------------------------------------
+	// Every index is built over the same synthetic child keys, so the only
+	// thing that changes along the sweep is how many of them there are.
+	for i, n := range p.FanOuts {
+		keys := make([]key.Key, 0, n)
+		for j := 0; j < n; j++ {
+			var arr [32]byte
+			copy(arr[:], randomBytes(p.Seed+60+uint64(i)*7+uint64(j), 32))
+			keys = append(keys, mustV(key.NewFromHash(key.Blob, 65536, arr)))
+		}
+		fb := fstree.NewFileIndexBuilder(ic)
+		for _, k := range keys {
+			must(fb.AddChild(fx.Mem.put, k, nil))
+		}
+		root := mustV(fb.Finish(fx.Mem.put))
+		fx.FileIndexes = append(fx.FileIndexes, memFileIndex{Children: n, Root: root, Keys: keys})
+	}
 
 	// One file built the way ingest builds files: content-defined chunks
-	// under FileNode index levels.
+	// under FileNode index levels. The chunk count is recorded, so the
+	// per-chunk denominator is exact rather than assumed.
 	fb := fstree.NewFileIndexBuilder(ic)
-	nblobs := 0
+	nblobs := int64(0)
 	must(chunkers.SplitBytes(bytes.NewReader(fx.CorpusText), nil, func(chunk []byte) error {
 		o, err := fstree.EncodeBlob(chunk)
 		if err != nil {
@@ -445,8 +747,9 @@ func buildMemTrees(e *Env, fx *Fixtures) {
 	}))
 	fx.FileRoot = mustV(fb.Finish(fx.Mem.put))
 	fx.FileBytes = int64(len(fx.CorpusText))
+	fx.FileChunks = nblobs
 
-	// A copy of the shallow tree with one leaf missing, for the
+	// A copy of the narrowest tree with one leaf missing, for the
 	// completeness check's failure path.
 	fx.IncompleteStore = newMemStore()
 	fx.Mem.mu.RLock()
@@ -481,6 +784,27 @@ func buildDiskTrees(e *Env, fx *Fixtures) {
 	must(stampTree(fx.TreeV2))
 	writeIgnoreFixture(fx.IgnoreDir, p)
 	must(stampTree(fx.IgnoreDir))
+
+	// Exact rate denominators, taken here — before anything is timed — with
+	// the core's own walk. A filtered scan, an unfiltered scan and the
+	// successor tree cover different files and different bytes; using one
+	// number for all three would misreport every rate but one.
+	fx.V1Included = scanCounts(fx.TreeV1, false)
+	fx.V1Unfiltered = scanCounts(fx.TreeV1, true)
+	fx.V2Included = scanCounts(fx.TreeV2, false)
+
+	// The listing a restored tree has to reproduce, derived from the
+	// fixture's own ignore rules rather than from either core.
+	fx.V1IncludedManifest = mustV(manifestLines(fx.TreeV1, fixtureIncluded))
+}
+
+// scanCounts is ingest.Scan used as a measuring tape rather than as a
+// measured operation: it runs once, at fixture-build time, so the timed
+// cases can divide by an exact count instead of an estimate.
+func scanCounts(root string, ignoreRules bool) treeCounts {
+	files, bytesTotal, err := ingest.Scan(root, ignoreRules, 1)
+	must(err)
+	return treeCounts{Files: int64(files), Bytes: int64(bytesTotal)}
 }
 
 // writeFixtureTree lays out the deterministic source tree. Both drivers build
@@ -580,9 +904,27 @@ func writeIgnoreFixture(root string, p Profile) {
 	}
 }
 
-func buildPackFixtures(e *Env, fx *Fixtures) {
-	p := e.Profile
+// WirePack is one producing core's encoding of the shared object
+// population, as read from the wire directory. Its producer, content hash
+// and encoded size are recorded in the report: two cores' packs carry the
+// same objects but not the same compressed bytes, so a decode measurement
+// has to say which bytes it decoded.
+type WirePack struct {
+	Producer string   `json:"producer"`
+	SHA256   string   `json:"sha256"`
+	Bytes    int64    `json:"bytes"`
+	Objects  int      `json:"objects"`
+	Data     []byte   `json:"-"`
+	Records  [][]byte `json:"-"`
+}
+
+// packObjectPopulation is the object population both cores encode into a
+// wire pack: a mix of tiny and large, compressible and random payloads, from
+// the profile's seed alone. It is a pure function of the profile, so the
+// --emit-wire pass does not have to build any other fixture.
+func packObjectPopulation(p Profile) []fstree.Object {
 	n := maxInt(p.BatchOps/4, 64)
+	out := make([]fstree.Object, 0, n)
 	for i := 0; i < n; i++ {
 		var b []byte
 		switch i % 4 {
@@ -597,20 +939,96 @@ func buildPackFixtures(e *Env, fx *Fixtures) {
 		}
 		o, err := fstree.EncodeBlob(b)
 		must(err)
-		fx.PackObjects = append(fx.PackObjects, o)
+		out = append(out, o)
 	}
+	return out
+}
+
+// encodeWirePack writes the population as one wire pack with this core's
+// encoder.
+func encodeWirePack(objs []fstree.Object) []byte {
 	var buf bytes.Buffer
 	w := amberpack.NewWriter(&buf)
-	for _, o := range fx.PackObjects {
+	for _, o := range objs {
 		must(w.Add(o))
 	}
 	must(w.Close())
-	fx.WirePack = buf.Bytes()
+	return buf.Bytes()
+}
+
+// emitWirePack is the production pass: it writes this core's encoding of the
+// shared object population into the wire directory, where the measurement
+// pass of *both* drivers will read it. Nothing is measured here.
+func emitWirePack(p Profile, dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	objs := packObjectPopulation(p)
+	pack := encodeWirePack(objs)
+	path := filepath.Join(dir, wireProducer+".pack")
+	if err := os.WriteFile(path, pack, 0o644); err != nil {
+		return err
+	}
+	sum := sha256.Sum256(pack)
+	fmt.Printf("%s: wrote %s (%d objects, %d bytes, sha256 %s)\n",
+		wireProducer, path, len(objs), len(pack), hex.EncodeToString(sum[:]))
+	return nil
+}
+
+// wireProducers are the packs every driver reads, in a fixed order, so the
+// two documents carry the same workloads in the same sequence.
+var wireProducers = []string{"go", "rust"}
+
+const wireProducer = "go"
+
+// loadWirePacks reads every producer's pack out of the shared wire
+// directory and splits it into its raw records. Both drivers run this over
+// the same files, so `amberpack.reader_all/producer-rust` in the Go document
+// and in the Rust document are the same bytes, byte for byte.
+func loadWirePacks(e *Env, fx *Fixtures) {
+	for _, producer := range wireProducers {
+		path := filepath.Join(e.WireDir, producer+".pack")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			panic(fmt.Sprintf("wire pack %s: %v (run --emit-wire for both cores first)", path, err))
+		}
+		sum := sha256.Sum256(data)
+		wp := WirePack{
+			Producer: producer,
+			SHA256:   hex.EncodeToString(sum[:]),
+			Bytes:    int64(len(data)),
+			Data:     data,
+		}
+		r := amberpack.NewReader(bytes.NewReader(data))
+		for rec, err := range r.Records() {
+			must(err)
+			wp.Records = append(wp.Records, append([]byte(nil), rec.Bytes...))
+		}
+		wp.Objects = len(wp.Records)
+		fx.Wire = append(fx.Wire, wp)
+	}
+}
+
+// wireOf returns the loaded pack of one producer.
+func (fx *Fixtures) wireOf(producer string) WirePack {
+	for _, w := range fx.Wire {
+		if w.Producer == producer {
+			return w
+		}
+	}
+	panic("no wire pack for producer " + producer)
+}
+
+func buildPackFixtures(e *Env, fx *Fixtures) {
+	p := e.Profile
+	fx.PackObjects = packObjectPopulation(p)
+	fx.WirePack = encodeWirePack(fx.PackObjects)
 	for _, o := range fx.PackObjects {
 		rec, err := amberpack.EncodeRecord(o.Key, o.Bytes)
 		must(err)
 		fx.WireRecords = append(fx.WireRecords, rec)
 	}
+	loadWirePacks(e, fx)
 }
 
 // storeObjects is the deterministic object population of the packstore
@@ -749,6 +1167,7 @@ func buildInboxTemplate(e *Env, fx *Fixtures) {
 	// Each inbox entry is one wire pack holding a disjoint slice of a fresh
 	// object population, so a drain really stores new objects.
 	objs := storeObjects(p, p.InboxPacks*32, 30000)
+	fx.InboxLogicalBytes = packBytes(objs[:p.InboxPacks*32])
 	for i := 0; i < p.InboxPacks; i++ {
 		var buf bytes.Buffer
 		w := amberpack.NewWriter(&buf)

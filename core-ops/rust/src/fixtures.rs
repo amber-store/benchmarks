@@ -15,6 +15,9 @@ use amber_store_core::packstore;
 use amber_store_core::reference::Reference;
 use amber_store_core::refstore;
 
+use crate::env::Profile;
+use crate::harness::Dims;
+
 // ---------------------------------------------------------------------------
 // Deterministic pseudo-randomness
 // ---------------------------------------------------------------------------
@@ -245,14 +248,33 @@ fn stamp_path(path: &Path, rel: &str) -> io::Result<()> {
 /// same way, so comparing the two digests proves the fixtures really are
 /// identical — including the timestamps ingest folds into every entry.
 pub fn manifest(root: &Path) -> io::Result<String> {
+    Ok(digest_strings(&manifest_lines(root, None)?))
+}
+
+/// `manifest`'s listing, before it is digested, optionally restricted to the
+/// paths `keep` accepts. `None` accepts everything.
+pub fn manifest_lines(
+    root: &Path,
+    keep: Option<&dyn Fn(&str, bool) -> bool>,
+) -> io::Result<Vec<String>> {
     let mut lines: Vec<String> = Vec::new();
-    fn walk(root: &Path, dir: &Path, lines: &mut Vec<String>) -> io::Result<()> {
+    fn walk(
+        root: &Path,
+        dir: &Path,
+        keep: Option<&dyn Fn(&str, bool) -> bool>,
+        lines: &mut Vec<String>,
+    ) -> io::Result<()> {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let p = entry.path();
             let rel = p.strip_prefix(root).unwrap().to_string_lossy().to_string();
             let ft = entry.file_type()?;
+            if let Some(k) = keep
+                && !k(&rel, ft.is_dir())
+            {
+                continue;
+            }
             let md = fs::symlink_metadata(&p)?;
             let mt = format!("{}.{:09}", md.mtime(), md.mtime_nsec());
             if ft.is_dir() {
@@ -262,7 +284,7 @@ pub fn manifest(root: &Path) -> io::Result<String> {
                     mt,
                     rel
                 ));
-                walk(root, &p, lines)?;
+                walk(root, &p, keep, lines)?;
             } else if ft.is_symlink() {
                 let target = fs::read_link(&p)?;
                 lines.push(format!("l {} {} -> {}", rel, mt, target.to_string_lossy()));
@@ -280,9 +302,49 @@ pub fn manifest(root: &Path) -> io::Result<String> {
         }
         Ok(())
     }
-    walk(root, root, &mut lines)?;
+    walk(root, root, keep, &mut lines)?;
     lines.sort();
-    Ok(digest(lines.join("\n").as_bytes()))
+    Ok(lines)
+}
+
+/// Whether one path of the fixture tree is expected to survive ingest, by
+/// applying the `.amberignore` rules the harness itself wrote into that tree
+/// ("*.tmp", "!keep.tmp", "/build/").
+///
+/// This is deliberately an independent statement of the expectation: the
+/// restored-tree check compares the complete restored listing against it,
+/// not against anything either core computed. Two cores agreeing with each
+/// other proves only that they agree.
+pub fn fixture_included(rel: &str, _is_dir: bool) -> bool {
+    if rel == "build" || rel.starts_with("build/") {
+        return false;
+    }
+    let base = rel.rsplit('/').next().unwrap_or(rel);
+    if base.ends_with(".tmp") && base != "keep.tmp" {
+        return false;
+    }
+    true
+}
+
+/// The first line on which two sorted listings disagree, so a failed
+/// comparison names the path rather than two hashes.
+pub fn first_difference(want: &[String], got: &[String]) -> String {
+    let n = want.len().max(got.len());
+    for i in 0..n {
+        let w = want.get(i).map(String::as_str).unwrap_or("");
+        let g = got.get(i).map(String::as_str).unwrap_or("");
+        if w != g {
+            return format!(
+                "line {} of {}/{}: expected {:?}, restored {:?}",
+                i,
+                want.len(),
+                got.len(),
+                w,
+                g
+            );
+        }
+    }
+    String::new()
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +398,12 @@ impl MemStore {
         Ok(self.m.read().unwrap().contains_key(&k))
     }
 
+    /// How many distinct objects the bag holds. Only ever called at fixture
+    /// time, to record an exact object count for a rate denominator.
+    pub fn len(&self) -> usize {
+        self.m.read().unwrap().len()
+    }
+
     pub fn drop_key(&self, k: Key) {
         self.m.write().unwrap().remove(&k);
     }
@@ -354,29 +422,213 @@ impl MemStore {
 /// A batch of byte strings a short operation is run over. Short operations
 /// are always measured over a whole set: one call is far below the clock's
 /// resolution, a set of a few thousand is not.
+///
+/// A set is one point in the (size, content) grid: its dimensions are what
+/// the report sweeps, and its name is only a label for that point.
+#[derive(Clone)]
 pub struct PayloadSet {
     pub name: String,
     pub items: Vec<Vec<u8>>,
     pub bytes: i64,
+    pub item_bytes: i64,
+    pub content: String,
 }
 
-pub fn new_payload_set(name: &str, count: usize, size: usize, seed: u64, text: bool) -> PayloadSet {
-    let mut items = Vec::with_capacity(count);
+impl PayloadSet {
+    /// The set as workload dimensions.
+    pub fn dims(&self) -> Dims {
+        Dims {
+            item_bytes: self.item_bytes,
+            items: self.items.len() as i64,
+            content: self.content.clone(),
+            ..Default::default()
+        }
+    }
+
+    /// The leading part of the set whose total is at most `max` bytes, for
+    /// operations that write every item to disk and would otherwise dominate
+    /// the run. At least one item is always kept.
+    pub fn limit(&self, max: i64) -> PayloadSet {
+        if self.bytes <= max || self.item_bytes == 0 {
+            return self.clone();
+        }
+        let n = ((max / self.item_bytes) as usize).clamp(1, self.items.len());
+        PayloadSet {
+            name: self.name.clone(),
+            items: self.items[..n].to_vec(),
+            bytes: n as i64 * self.item_bytes,
+            item_bytes: self.item_bytes,
+            content: self.content.clone(),
+        }
+    }
+}
+
+/// The object-size classes every size-sensitive operation is swept over: an
+/// empty object, a tiny one, a kilobyte, a megabyte and a large
+/// multi-megabyte one. The classes are absolute sizes, not fractions of the
+/// profile, so the same workload means the same thing in both profiles.
+/// Mirrors `payloadSizes` in `../go/fixtures_build.go`.
+pub const PAYLOAD_SIZES: &[(&str, usize)] = &[
+    ("empty", 0),
+    ("tiny-64B", 64),
+    ("4KiB", 4 << 10),
+    ("1MiB", 1 << 20),
+    ("large-8MiB", 8 << 20),
+];
+
+/// The content kinds crossed with those sizes:
+///
+/// * `random` — incompressible, every item distinct;
+/// * `text` — compressible, every item distinct;
+/// * `duplicate` — every item byte-identical, so a content-addressed store
+///   sees one object and the rest are dedup hits.
+///
+/// The empty size is not crossed with these: a zero-length object has no
+/// content to be random, compressible or duplicated.
+pub const PAYLOAD_CONTENTS: &[&str] = &["random", "text", "duplicate"];
+
+pub fn new_payload_set(
+    name: &str,
+    content: &str,
+    count: usize,
+    size: usize,
+    seed: u64,
+) -> PayloadSet {
+    let mut items: Vec<Vec<u8>> = Vec::with_capacity(count);
     let mut bytes = 0i64;
     for i in 0..count {
         let s = seed.wrapping_add((i as u64).wrapping_mul(0x0100_0000_01B3));
-        items.push(if text {
-            compressible_bytes(s, size)
-        } else {
-            random_bytes(s, size)
-        });
+        let item = match content {
+            "text" => compressible_bytes(s, size),
+            // Every item is the same bytes, so the set has one distinct
+            // object in it however many items it holds.
+            "duplicate" => {
+                if i == 0 {
+                    random_bytes(seed, size)
+                } else {
+                    items[0].clone()
+                }
+            }
+            _ => random_bytes(s, size),
+        };
+        items.push(item);
         bytes += size as i64;
     }
     PayloadSet {
         name: name.to_string(),
         items,
         bytes,
+        item_bytes: size as i64,
+        content: content.to_string(),
     }
+}
+
+/// Builds the whole (size, content) grid once. Every set holds about
+/// `payload_total` bytes, so the grid costs the same at every size and a
+/// per-byte rate is comparable along a row.
+pub fn build_payload_matrix(p: &Profile) -> Vec<PayloadSet> {
+    let mut out = Vec::new();
+    for (i, (name, size)) in PAYLOAD_SIZES.iter().enumerate() {
+        if *size == 0 {
+            out.push(new_payload_set(
+                "empty",
+                "empty",
+                p.batch_ops * 4,
+                0,
+                p.seed + 10,
+            ));
+            continue;
+        }
+        let items = ((p.payload_total / *size as i64) as usize).clamp(1, 16384);
+        for (j, content) in PAYLOAD_CONTENTS.iter().enumerate() {
+            let seed = p.seed + 10 + (i as u64) * 97 + (j as u64) * 7919;
+            out.push(new_payload_set(
+                &format!("{name}-{content}"),
+                content,
+                items,
+                *size,
+                seed,
+            ));
+        }
+    }
+    out
+}
+
+/// One point of the grid, by name.
+pub fn payload_named<'a>(sets: &'a [PayloadSet], name: &str) -> &'a PayloadSet {
+    sets.iter()
+        .find(|ps| ps.name == name)
+        .unwrap_or_else(|| panic!("no payload set named {name}"))
+}
+
+/// The exact extent of one on-disk tree as an ingest walk sees it: how many
+/// files it covers and how many logical bytes those files hold. Both numbers
+/// are taken outside every measured interval.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TreeCounts {
+    pub files: i64,
+    pub bytes: i64,
+}
+
+/// One producing core's encoding of the shared object population, as read
+/// from the wire directory. Its producer, content hash and encoded size are
+/// recorded in the report: two cores' packs carry the same objects but not
+/// the same compressed bytes, so a decode measurement has to say which bytes
+/// it decoded.
+pub struct WirePack {
+    pub producer: String,
+    pub sha256: String,
+    pub bytes: i64,
+    pub objects: usize,
+    pub data: Vec<u8>,
+    pub records: Vec<Vec<u8>>,
+}
+
+/// One point of the directory-width sweep: a real prolly tree of `entries`
+/// entries, with every name it holds and one that it does not.
+pub struct MemDir {
+    pub entries: usize,
+    pub root: Key,
+    pub names: Vec<Vec<u8>>,
+    pub miss_name: Vec<u8>,
+    /// How many stored objects the directory's own encoding came to,
+    /// counted outside every measured interval.
+    pub objects: i64,
+}
+
+/// One point of the path-depth sweep.
+pub struct MemChain {
+    pub depth: usize,
+    pub root: Key,
+    pub path: String,
+}
+
+/// One point of the file-index fan-out sweep.
+pub struct MemFileIndex {
+    pub children: usize,
+    pub root: Key,
+    #[allow(dead_code)]
+    pub keys: Vec<Key>,
+}
+
+/// One point of a node-codec sweep.
+pub struct EntrySet {
+    pub name: String,
+    pub content: String,
+    pub entries: Vec<Entry>,
+    pub enc: Vec<u8>,
+}
+
+pub struct PairSet {
+    pub name: String,
+    pub pairs: Vec<fstree::DirPair>,
+    pub enc: Vec<u8>,
+}
+
+pub struct ChildSet {
+    pub name: String,
+    pub keys: Vec<Key>,
+    pub enc: Vec<u8>,
 }
 
 /// One record's position: the sealed segment it lives in and its offset
@@ -416,6 +668,11 @@ pub struct Fixtures {
     pub corpus_random: Vec<u8>,
     pub corpus_text: Vec<u8>,
 
+    /// The whole (size, content) grid: every size class crossed with every
+    /// content kind. Size-sensitive operations are swept over it.
+    pub payloads: Vec<PayloadSet>,
+    /// Named points of that grid, for the cases and checks that need one
+    /// particular shape rather than the sweep.
     pub tiny: PayloadSet,
     pub small: PayloadSet,
     pub text: PayloadSet,
@@ -431,6 +688,11 @@ pub struct Fixtures {
     pub xattrs_small_enc: Vec<u8>,
     pub xattrs_large_enc: Vec<u8>,
 
+    /// The node-codec sweeps: one encoded node per entry count, plus the
+    /// with-xattrs and partial-change structured variants.
+    pub entry_sets: Vec<EntrySet>,
+    pub pair_sets: Vec<PairSet>,
+    pub child_sets: Vec<ChildSet>,
     pub entries_small: Vec<Entry>,
     pub entries_large: Vec<Entry>,
     pub pairs_small: Vec<fstree::DirPair>,
@@ -446,28 +708,56 @@ pub struct Fixtures {
     pub item_encodings: Vec<Vec<u8>>,
 
     pub mem: MemStore,
+    /// The directory-width sweep, the path-depth sweep and the file-index
+    /// fan-out sweep: one fixture per point, all in `mem`.
+    pub dirs: Vec<MemDir>,
+    pub chains: Vec<MemChain>,
+    #[allow(dead_code)]
+    pub file_indexes: Vec<MemFileIndex>,
     pub wide_root: Key,
     pub wide_names: Vec<Vec<u8>>,
     pub miss_name: Vec<u8>,
     pub deep_root: Key,
     pub deep_path: String,
+    pub deep_depth: usize,
     pub shallow_root: Key,
     pub file_root: Key,
     pub file_bytes: i64,
+    /// How many content chunks the corpus file really split into, counted
+    /// outside every measured interval.
+    pub file_chunks: i64,
     pub incomplete_root: Key,
     pub incomplete_store: MemStore,
 
     pub tree_v1: PathBuf,
     pub tree_v2: PathBuf,
     pub ingest_template: PathBuf,
+    /// What the fixture writer laid down, ignored files included. It sizes
+    /// the fixture; it is *not* a rate denominator, because ingest does not
+    /// include all of it.
     pub tree_bytes: i64,
     #[allow(dead_code)]
     pub tree_files: i64,
+    /// Exact per-tree counts, measured outside every timed interval with the
+    /// core's own scan, so each rate has the denominator that belongs to it.
+    pub v1_included: TreeCounts,
+    pub v1_unfiltered: TreeCounts,
+    pub v2_included: TreeCounts,
+    /// The listing a restored tree must reproduce: the source tree
+    /// restricted to the paths the fixture's own ignore rules keep,
+    /// computed by the harness rather than by either core.
+    pub v1_included_manifest: Vec<String>,
     pub ignore_dir: PathBuf,
 
+    /// The object population both cores encode, and *this* core's own
+    /// encoding of it.
     pub pack_objects: Vec<Object>,
     pub wire_pack: Vec<u8>,
     pub wire_records: Vec<Vec<u8>>,
+    /// Every producer's pack, read from the shared wire directory. Both
+    /// drivers load the same files, so the reader and decoder cases are
+    /// measured on byte-identical input.
+    pub wire: Vec<WirePack>,
 
     pub store_template: PathBuf,
     pub store_keys: Vec<Key>,
@@ -480,6 +770,10 @@ pub struct Fixtures {
     pub gc_live_root: Key,
     pub inbox_packs: Vec<Vec<u8>>,
     pub inbox_roots: Vec<Key>,
+    /// The payload the staged packs carry, which is the same in both cores;
+    /// the packs' encoded sizes are not, and are reported per core instead
+    /// of used as a shared denominator.
+    pub inbox_logical_bytes: i64,
 
     pub ref_record: Reference,
     pub ref_record_enc: Vec<u8>,
@@ -494,4 +788,90 @@ pub struct Fixtures {
     pub ro_dir: PathBuf,
     pub ro_locs: Vec<RecordLoc>,
     pub ro_seg_id: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Output consumption
+// ---------------------------------------------------------------------------
+
+// Every measured case returns an accumulator built by consuming what its
+// calls produced, and the driver records that accumulator in each sample.
+// Two properties follow:
+//
+//   * nothing the case computed can be dead code, because the output reaches
+//     a value the driver writes to its report through an opaque call; and
+//   * the two cores' accumulators are directly comparable wherever they are
+//     specified to produce the same bytes.
+//
+// Consumption is constant-time per call. A fixed-size output (a 32-byte key)
+// is folded whole, because that is cheap; a byte stream goes through
+// `sink_bytes`, which is never inlined and touches only its length and its
+// two ends. Hashing whole payloads inside a measured interval would make an
+// encode measurement into encode plus a second hash, so the full-output
+// digests are computed by the correctness checks instead, before any timing
+// starts. `../go/fixtures.go` implements the identical FNV-1a over the
+// identical byte sequences, which is what makes the cross-core comparison
+// hold.
+
+const FNV_OFFSET: u64 = 14695981039346656037;
+const FNV_PRIME: u64 = 1099511628211;
+
+/// Starts an accumulator.
+pub fn new_fold() -> u64 {
+    FNV_OFFSET
+}
+
+/// Folds every byte of `b`. Only ever called on fixed-size, short outputs
+/// and outside measured intervals on longer ones.
+pub fn fold_bytes(mut acc: u64, b: &[u8]) -> u64 {
+    for x in b {
+        acc ^= *x as u64;
+        acc = acc.wrapping_mul(FNV_PRIME);
+    }
+    acc
+}
+
+/// Folds a number as its eight little-endian bytes.
+pub fn fold_u64(mut acc: u64, mut v: u64) -> u64 {
+    for _ in 0..8 {
+        acc ^= v & 0xFF;
+        acc = acc.wrapping_mul(FNV_PRIME);
+        v >>= 8;
+    }
+    acc
+}
+
+pub fn fold_i64(acc: u64, v: i64) -> u64 {
+    fold_u64(acc, v as u64)
+}
+
+pub fn fold_str(acc: u64, s: &str) -> u64 {
+    fold_bytes(acc, s.as_bytes())
+}
+
+pub fn fold_bool(acc: u64, b: bool) -> u64 {
+    fold_u64(acc, u64::from(b))
+}
+
+/// Folds all 32 bytes of a key: the type and length header and the whole
+/// digest, so a case that constructs keys cannot be reduced to one that only
+/// assembles headers.
+pub fn fold_key(acc: u64, k: &Key) -> u64 {
+    fold_bytes(acc, k.as_bytes())
+}
+
+/// Consumes a byte-stream output in constant time. It is never inlined, so
+/// the caller has to produce a real slice pointing at real memory, and it
+/// touches the length and both ends of that memory -- enough that the buffer
+/// cannot be optimised away, and cheap enough that an encode or decode
+/// measurement stays a measurement of encode or decode.
+#[inline(never)]
+pub fn sink_bytes(acc: u64, b: &[u8]) -> u64 {
+    let acc = fold_u64(acc, b.len() as u64);
+    if b.is_empty() {
+        std::hint::black_box(acc)
+    } else {
+        let acc = fold_u64(acc, b[0] as u64);
+        std::hint::black_box(fold_u64(acc, b[b.len() - 1] as u64))
+    }
 }

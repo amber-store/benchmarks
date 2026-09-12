@@ -30,199 +30,244 @@ func fstreeCases(e *Env) []Case {
 	reps := 64
 	var out []Case
 
-	// --- encoders -----------------------------------------------------
-	encBlob := func(name string, ps payloadSet) Case {
-		return Case{
-			Group: "fstree", Op: "fstree.encode_blob", Workload: name, Threads: 1,
-			Ops: len(ps.Items), Bytes: ps.Bytes,
-			Setup: func(*Env) any { return ps },
+	// --- encoders: the payload-size sweep -------------------------------
+	for _, ps := range fx.Payloads {
+		ps := ps
+		lim := ps.limit(4 << 20)
+		out = append(out, Case{
+			Group: "fstree", Op: "fstree.encode_blob", Workload: lim.Name, Threads: 1,
+			Ops: len(lim.Items), Bytes: lim.Bytes, BytesKind: BytesPayload,
+			Dims: lim.dims(), CrossChecksum: true,
+			Setup: func(*Env) any { return lim },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, b := range s.(payloadSet).Items {
 					o, err := fstree.EncodeBlob(b)
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(o.Key[0])
-				}
-				return acc
-			},
-		}
-	}
-	out = append(out, encBlob("tiny-64B", fx.Tiny), encBlob("large-1MiB-text", fx.Large))
-
-	encPair := func(op, name string, n int, run func(*Env) uint64, bytes int64) Case {
-		return Case{
-			Group: "fstree", Op: op, Workload: name, Threads: 1, Ops: n, Bytes: bytes,
-			Setup: func(*Env) any { return nil },
-			Run:   func(en *Env, _ any) uint64 { return run(en) },
-		}
-	}
-	out = append(out,
-		encPair("fstree.encode_dir_leaf", "entries-8", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				o, err := fstree.EncodeDirLeaf(en.fx.EntriesSmall)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(o.Bytes))
-			}
-			return acc
-		}, int64(reps*len(fx.EncDirLeafSmall))),
-		encPair("fstree.encode_dir_leaf", "entries-128-with-xattrs", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				o, err := fstree.EncodeDirLeaf(en.fx.EntriesLarge)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(o.Bytes))
-			}
-			return acc
-		}, int64(reps*len(fx.EncDirLeafLarge))),
-		encPair("fstree.encode_dir_node", "pairs-8", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				o, err := fstree.EncodeDirNode(en.fx.PairsSmall)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(o.Bytes))
-			}
-			return acc
-		}, int64(reps*len(fx.EncDirNodeSmall))),
-		encPair("fstree.encode_dir_node", "pairs-128", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				o, err := fstree.EncodeDirNode(en.fx.PairsLarge)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(o.Bytes))
-			}
-			return acc
-		}, int64(reps*len(fx.EncDirNodeLarge))),
-		encPair("fstree.encode_file_node", "children-8", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				o, err := fstree.EncodeFileNode(en.fx.ChildrenSmall)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(o.Bytes))
-			}
-			return acc
-		}, int64(reps*len(fx.EncFileNodeSmall))),
-		encPair("fstree.encode_file_node", "children-1024", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				o, err := fstree.EncodeFileNode(en.fx.ChildrenLarge)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(o.Bytes))
-			}
-			return acc
-		}, int64(reps*len(fx.EncFileNodeLarge))),
-		encPair("fstree.encode_xattr_set", "xattrs-64", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				o, err := fstree.EncodeXattrSet(en.fx.XattrsLarge)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(o.Bytes))
-			}
-			return acc
-		}, 0),
-
-		// --- decoders -------------------------------------------------
-		encPair("fstree.decode_dir_leaf", "entries-8", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				es, err := fstree.DecodeDirLeaf(en.fx.EncDirLeafSmall)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(es))
-			}
-			return acc
-		}, int64(reps*len(fx.EncDirLeafSmall))),
-		encPair("fstree.decode_dir_leaf", "entries-128-with-xattrs", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				es, err := fstree.DecodeDirLeaf(en.fx.EncDirLeafLarge)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(es))
-			}
-			return acc
-		}, int64(reps*len(fx.EncDirLeafLarge))),
-		encPair("fstree.decode_dir_node", "pairs-128", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				ps, err := fstree.DecodeDirNode(en.fx.EncDirNodeLarge)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(ps))
-			}
-			return acc
-		}, int64(reps*len(fx.EncDirNodeLarge))),
-		encPair("fstree.decode_file_node", "children-1024", reps, func(en *Env) uint64 {
-			var acc uint64
-			for i := 0; i < reps; i++ {
-				ks, err := fstree.DecodeFileNode(en.fx.EncFileNodeLarge)
-				if err != nil {
-					panic(err)
-				}
-				acc += uint64(len(ks))
-			}
-			return acc
-		}, int64(reps*len(fx.EncFileNodeLarge))),
-	)
-
-	// --- child keys ---------------------------------------------------
-	childInputs := []struct {
-		name string
-		k    func(*Env) key.Key
-		b    func(*Env) []byte
-	}{
-		{"dir-leaf-128", func(en *Env) key.Key { return mustV(fstree.EncodeDirLeaf(en.fx.EntriesLarge)).Key },
-			func(en *Env) []byte { return en.fx.EncDirLeafLarge }},
-		{"dir-node-128", func(en *Env) key.Key { return mustV(fstree.EncodeDirNode(en.fx.PairsLarge)).Key },
-			func(en *Env) []byte { return en.fx.EncDirNodeLarge }},
-		{"file-node-1024", func(en *Env) key.Key { return mustV(fstree.EncodeFileNode(en.fx.ChildrenLarge)).Key },
-			func(en *Env) []byte { return en.fx.EncFileNodeLarge }},
-	}
-	for _, ci := range childInputs {
-		ci := ci
-		out = append(out, Case{
-			Group: "fstree", Op: "fstree.child_keys", Workload: ci.name, Threads: 1, Ops: reps,
-			Setup: func(en *Env) any { return [2]any{ci.k(en), ci.b(en)} },
-			Run: func(_ *Env, s any) uint64 {
-				pair := s.([2]any)
-				var acc uint64
-				for i := 0; i < reps; i++ {
-					ks, err := fstree.ChildKeys(pair[0].(key.Key), pair[1].([]byte))
-					if err != nil {
-						panic(err)
-					}
-					acc += uint64(len(ks))
+					// The whole content key, so the hash is observed, and
+					// the encoded object's ends, without a second pass.
+					acc = foldKey(acc, o.Key)
+					acc = sinkBytes(acc, o.Bytes)
 				}
 				return acc
 			},
 		})
 	}
 
-	// --- builders -----------------------------------------------------
-	for _, n := range []int{128, e.Profile.SyntheticWide} {
+	// --- node codecs: the entry-count sweep -----------------------------
+	// Every point differs from its neighbours in one number only, so the
+	// per-entry cost of an encode or a decode can be read off the row.
+	for _, es := range fx.EntrySets {
+		es := es
+		dims := Dims{Entries: int64(len(es.Entries)), Items: int64(reps),
+			ItemBytes: int64(len(es.Enc)), Content: es.Content, Shape: "leaf"}
+		out = append(out,
+			Case{
+				Group: "fstree", Op: "fstree.encode_dir_leaf", Workload: es.Name, Threads: 1,
+				Ops: reps * len(es.Entries), Bytes: int64(reps * len(es.Enc)), BytesKind: BytesEncoded,
+				Dims: dims, CrossChecksum: true,
+				Setup: func(*Env) any { return es.Entries },
+				Run: func(_ *Env, st any) uint64 {
+					acc := newFold()
+					for i := 0; i < reps; i++ {
+						o, err := fstree.EncodeDirLeaf(st.([]fstree.Entry))
+						if err != nil {
+							panic(err)
+						}
+						acc = foldKey(acc, o.Key)
+						acc = sinkBytes(acc, o.Bytes)
+					}
+					return acc
+				},
+			},
+			Case{
+				Group: "fstree", Op: "fstree.decode_dir_leaf", Workload: es.Name, Threads: 1,
+				Ops: reps * len(es.Entries), Bytes: int64(reps * len(es.Enc)), BytesKind: BytesEncoded,
+				Dims: dims, CrossChecksum: true,
+				Setup: func(*Env) any { return es.Enc },
+				Run: func(_ *Env, st any) uint64 {
+					acc := newFold()
+					for i := 0; i < reps; i++ {
+						ents, err := fstree.DecodeDirLeaf(st.([]byte))
+						if err != nil {
+							panic(err)
+						}
+						acc = foldU64(acc, uint64(len(ents)))
+						for _, en := range ents {
+							// Each decoded entry's fields: names and keys
+							// are short, so this stays proportional to the
+							// entry count rather than to the payload.
+							acc = sinkBytes(acc, en.Name)
+							acc = sinkBytes(acc, en.ContentKey)
+							acc = foldU64(acc, uint64(en.Mode))
+							acc = foldI64(acc, en.Mtime)
+						}
+					}
+					return acc
+				},
+			},
+		)
+	}
+	for _, pset := range fx.PairSets {
+		pset := pset
+		dims := Dims{Entries: int64(len(pset.Pairs)), Items: int64(reps),
+			ItemBytes: int64(len(pset.Enc)), Content: "structured", Shape: "index"}
+		out = append(out,
+			Case{
+				Group: "fstree", Op: "fstree.encode_dir_node", Workload: pset.Name, Threads: 1,
+				Ops: reps * len(pset.Pairs), Bytes: int64(reps * len(pset.Enc)), BytesKind: BytesEncoded,
+				Dims: dims, CrossChecksum: true,
+				Setup: func(*Env) any { return pset.Pairs },
+				Run: func(_ *Env, st any) uint64 {
+					acc := newFold()
+					for i := 0; i < reps; i++ {
+						o, err := fstree.EncodeDirNode(st.([]fstree.DirPair))
+						if err != nil {
+							panic(err)
+						}
+						acc = foldKey(acc, o.Key)
+						acc = sinkBytes(acc, o.Bytes)
+					}
+					return acc
+				},
+			},
+			Case{
+				Group: "fstree", Op: "fstree.decode_dir_node", Workload: pset.Name, Threads: 1,
+				Ops: reps * len(pset.Pairs), Bytes: int64(reps * len(pset.Enc)), BytesKind: BytesEncoded,
+				Dims: dims, CrossChecksum: true,
+				Setup: func(*Env) any { return pset.Enc },
+				Run: func(_ *Env, st any) uint64 {
+					acc := newFold()
+					for i := 0; i < reps; i++ {
+						prs, err := fstree.DecodeDirNode(st.([]byte))
+						if err != nil {
+							panic(err)
+						}
+						acc = foldU64(acc, uint64(len(prs)))
+						for _, pr := range prs {
+							acc = sinkBytes(acc, pr.SepName)
+							acc = sinkBytes(acc, pr.ChildKey)
+						}
+					}
+					return acc
+				},
+			},
+		)
+	}
+	for _, cs := range fx.ChildSets {
+		cs := cs
+		dims := Dims{Entries: int64(len(cs.Keys)), Items: int64(reps),
+			ItemBytes: int64(len(cs.Enc)), Content: "structured", Shape: "file-index"}
+		out = append(out,
+			Case{
+				Group: "fstree", Op: "fstree.encode_file_node", Workload: cs.Name, Threads: 1,
+				Ops: reps * len(cs.Keys), Bytes: int64(reps * len(cs.Enc)), BytesKind: BytesEncoded,
+				Dims: dims, CrossChecksum: true,
+				Setup: func(*Env) any { return cs.Keys },
+				Run: func(_ *Env, st any) uint64 {
+					acc := newFold()
+					for i := 0; i < reps; i++ {
+						o, err := fstree.EncodeFileNode(st.([]key.Key))
+						if err != nil {
+							panic(err)
+						}
+						acc = foldKey(acc, o.Key)
+						acc = sinkBytes(acc, o.Bytes)
+					}
+					return acc
+				},
+			},
+			Case{
+				Group: "fstree", Op: "fstree.decode_file_node", Workload: cs.Name, Threads: 1,
+				Ops: reps * len(cs.Keys), Bytes: int64(reps * len(cs.Enc)), BytesKind: BytesEncoded,
+				Dims: dims, CrossChecksum: true,
+				Setup: func(*Env) any { return cs.Enc },
+				Run: func(_ *Env, st any) uint64 {
+					acc := newFold()
+					for i := 0; i < reps; i++ {
+						ks, err := fstree.DecodeFileNode(st.([]byte))
+						if err != nil {
+							panic(err)
+						}
+						acc = foldU64(acc, uint64(len(ks)))
+						for _, k := range ks {
+							acc = foldKey(acc, k)
+						}
+					}
+					return acc
+				},
+			},
+		)
+	}
+	out = append(out, Case{
+		Group: "fstree", Op: "fstree.encode_xattr_set", Workload: "xattrs-64", Threads: 1,
+		Ops:           reps * len(fx.XattrsLarge),
+		Dims:          Dims{Entries: int64(len(fx.XattrsLarge)), Items: int64(reps), Content: "structured"},
+		CrossChecksum: true,
+		Setup:         func(*Env) any { return nil },
+		Run: func(en *Env, _ any) uint64 {
+			acc := newFold()
+			for i := 0; i < reps; i++ {
+				o, err := fstree.EncodeXattrSet(en.fx.XattrsLarge)
+				if err != nil {
+					panic(err)
+				}
+				acc = foldKey(acc, o.Key)
+				acc = sinkBytes(acc, o.Bytes)
+			}
+			return acc
+		},
+	})
+
+	// --- child keys ---------------------------------------------------
+	childInputs := []struct {
+		name    string
+		entries int64
+		k       func(*Env) key.Key
+		b       func(*Env) []byte
+	}{
+		{"dir-leaf-128", 128, func(en *Env) key.Key { return mustV(fstree.EncodeDirLeaf(en.fx.EntriesLarge)).Key },
+			func(en *Env) []byte { return en.fx.EncDirLeafLarge }},
+		{"dir-node-128", 128, func(en *Env) key.Key { return mustV(fstree.EncodeDirNode(en.fx.PairsLarge)).Key },
+			func(en *Env) []byte { return en.fx.EncDirNodeLarge }},
+		{"file-node-1024", 1024, func(en *Env) key.Key { return mustV(fstree.EncodeFileNode(en.fx.ChildrenLarge)).Key },
+			func(en *Env) []byte { return en.fx.EncFileNodeLarge }},
+	}
+	for _, ci := range childInputs {
+		ci := ci
+		out = append(out, Case{
+			Group: "fstree", Op: "fstree.child_keys", Workload: ci.name, Threads: 1, Ops: reps,
+			Dims:          Dims{Entries: ci.entries, Items: int64(reps), Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(en *Env) any { return [2]any{ci.k(en), ci.b(en)} },
+			Run: func(_ *Env, s any) uint64 {
+				pair := s.([2]any)
+				acc := newFold()
+				for i := 0; i < reps; i++ {
+					ks, err := fstree.ChildKeys(pair[0].(key.Key), pair[1].([]byte))
+					if err != nil {
+						panic(err)
+					}
+					acc = foldU64(acc, uint64(len(ks)))
+					for _, k := range ks {
+						acc = foldKey(acc, k)
+					}
+				}
+				return acc
+			},
+		})
+	}
+
+	// --- builders: the entry-count sweep --------------------------------
+	for _, n := range e.Profile.TreeWidths {
 		n := n
 		out = append(out, Case{
 			Group: "fstree", Op: "fstree.dir_builder", Workload: fmt.Sprintf("entries-%d", n), Threads: 1,
-			Ops: n,
+			Ops:           n,
+			Dims:          Dims{Entries: int64(n), Width: int64(n), Depth: 1, Shape: "wide", Content: "structured"},
+			CrossChecksum: true,
 			Setup: func(en *Env) any {
 				entries := make([]fstree.Entry, 0, n)
 				for i := 0; i < n; i++ {
@@ -242,15 +287,17 @@ func fstreeCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return uint64(sink.n) + uint64(root[0])
+				return foldKey(foldI64(foldI64(newFold(), int64(sink.n)), sink.bytes), root)
 			},
 		})
 	}
-	for _, n := range []int{128, 65536} {
+	for _, n := range e.Profile.FanOuts {
 		n := n
 		out = append(out, Case{
 			Group: "fstree", Op: "fstree.index_builder_file", Workload: fmt.Sprintf("children-%d", n), Threads: 1,
-			Ops: n,
+			Ops:           n,
+			Dims:          Dims{Entries: int64(n), Width: int64(n), Shape: "file-index", Content: "structured"},
+			CrossChecksum: true,
 			Setup: func(en *Env) any {
 				ks := make([]key.Key, 0, n)
 				for i := 0; i < n; i++ {
@@ -272,216 +319,279 @@ func fstreeCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return uint64(sink.n) + uint64(root[0])
+				return foldKey(foldI64(foldI64(newFold(), int64(sink.n)), sink.bytes), root)
 			},
 		})
 	}
 
-	// --- read paths ---------------------------------------------------
+	// --- read paths: the directory-width sweep --------------------------
 	lookups := e.Profile.BatchOps
-	out = append(out,
-		Case{
-			Group: "fstree", Op: "fstree.lookup_entry", Workload: "wide/hit", Threads: 1, Ops: lookups,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				var acc uint64
-				names := en.fx.WideNames
-				for i := 0; i < lookups; i++ {
-					ent, err := fstree.LookupEntry(en.fx.WideRoot, names[(i*7919)%len(names)], en.fx.Mem.get)
+	for _, d := range fx.Dirs {
+		d := d
+		wdims := Dims{Entries: int64(d.Entries), Width: int64(d.Entries), Depth: 1,
+			Shape: "wide", Content: "structured", Objects: d.Objects}
+		out = append(out,
+			Case{
+				Group: "fstree", Op: "fstree.lookup_entry",
+				Workload: fmt.Sprintf("width-%d/hit", d.Entries), Threads: 1, Ops: lookups,
+				Dims: wdims, CrossChecksum: true,
+				Setup: func(*Env) any { return nil },
+				Run: func(en *Env, _ any) uint64 {
+					acc := newFold()
+					for i := 0; i < lookups; i++ {
+						ent, err := fstree.LookupEntry(d.Root, d.Names[(i*7919)%len(d.Names)], en.fx.Mem.get)
+						if err != nil {
+							panic(err)
+						}
+						acc = sinkBytes(acc, ent.Name)
+						acc = sinkBytes(acc, ent.ContentKey)
+					}
+					return acc
+				},
+			},
+			Case{
+				Group: "fstree", Op: "fstree.lookup_entry",
+				Workload: fmt.Sprintf("width-%d/miss", d.Entries), Threads: 1, Ops: lookups,
+				Dims: wdims, CrossChecksum: true,
+				Setup: func(*Env) any { return nil },
+				Run: func(en *Env, _ any) uint64 {
+					acc := newFold()
+					for i := 0; i < lookups; i++ {
+						_, err := fstree.LookupEntry(d.Root, d.MissName, en.fx.Mem.get)
+						acc = foldBool(acc, errors.Is(err, fstree.ErrNotFound))
+					}
+					return acc
+				},
+			},
+			Case{
+				Group: "fstree", Op: "fstree.collect_entries",
+				Workload: fmt.Sprintf("width-%d", d.Entries), Threads: 1, Ops: d.Entries,
+				Dims: wdims, CrossChecksum: true,
+				Setup: func(*Env) any { return nil },
+				Run: func(en *Env, _ any) uint64 {
+					es, err := fstree.CollectEntries(d.Root, en.fx.Mem.get)
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(len(ent.Name))
-				}
-				return acc
-			},
-		},
-		Case{
-			Group: "fstree", Op: "fstree.lookup_entry", Workload: "wide/miss", Threads: 1, Ops: lookups,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				var acc uint64
-				for i := 0; i < lookups; i++ {
-					_, err := fstree.LookupEntry(en.fx.WideRoot, en.fx.MissName, en.fx.Mem.get)
-					if errors.Is(err, fstree.ErrNotFound) {
-						acc++
+					acc := foldU64(newFold(), uint64(len(es)))
+					for _, ent := range es {
+						acc = sinkBytes(acc, ent.Name)
+						acc = sinkBytes(acc, ent.ContentKey)
 					}
-				}
-				return acc
+					return acc
+				},
 			},
-		},
-		Case{
-			Group: "fstree", Op: "fstree.lookup_entry", Workload: "shallow/hit", Threads: 1, Ops: lookups,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				var acc uint64
-				for i := 0; i < lookups; i++ {
-					ent, err := fstree.LookupEntry(en.fx.ShallowRoot,
-						[]byte(fmt.Sprintf("entry-%08d", i%16)), en.fx.Mem.get)
+			Case{
+				Group: "fstree", Op: "fstree.list_entries",
+				Workload: fmt.Sprintf("width-%d/full-paging-100", d.Entries), Threads: 1, Ops: d.Entries,
+				Dims: wdims, CrossChecksum: true,
+				Setup: func(*Env) any { return nil },
+				Run: func(en *Env, _ any) uint64 {
+					acc := newFold()
+					var after []byte
+					for {
+						es, more, err := fstree.ListEntries(d.Root, after, 100, en.fx.Mem.get)
+						if err != nil {
+							panic(err)
+						}
+						acc = foldU64(acc, uint64(len(es)))
+						acc = foldBool(acc, more)
+						if !more || len(es) == 0 {
+							break
+						}
+						after = es[len(es)-1].Name
+					}
+					return acc
+				},
+			},
+			Case{
+				Group: "fstree", Op: "fstree.reachable_keys",
+				Workload: fmt.Sprintf("width-%d", d.Entries), Threads: 0, Ops: int(d.Objects),
+				Dims: wdims, CrossChecksum: true,
+				Setup: func(*Env) any { return nil },
+				Run: func(en *Env, _ any) uint64 {
+					ks, err := fstree.ReachableKeys(d.Root, en.fx.Mem.get)
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(len(ent.Name))
-				}
-				return acc
+					return foldU64(newFold(), uint64(len(ks)))
+				},
 			},
-		},
-		Case{
-			Group: "fstree", Op: "fstree.list_entries", Workload: "wide/first-page-100", Threads: 1, Ops: 64,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				var acc uint64
-				for i := 0; i < 64; i++ {
-					es, more, err := fstree.ListEntries(en.fx.WideRoot, nil, 100, en.fx.Mem.get)
-					if err != nil {
-						panic(err)
-					}
-					acc += uint64(len(es))
-					if more {
-						acc++
-					}
-				}
-				return acc
-			},
-		},
-		Case{
-			Group: "fstree", Op: "fstree.list_entries", Workload: "wide/full-paging-100", Threads: 1,
-			Ops:   1,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				var acc uint64
-				var after []byte
-				for {
-					es, more, err := fstree.ListEntries(en.fx.WideRoot, after, 100, en.fx.Mem.get)
-					if err != nil {
-						panic(err)
-					}
-					acc += uint64(len(es))
-					if !more || len(es) == 0 {
-						break
-					}
-					after = es[len(es)-1].Name
-				}
-				return acc
-			},
-		},
-		Case{
-			Group: "fstree", Op: "fstree.collect_entries", Workload: "wide", Threads: 1, Ops: 1,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				es, err := fstree.CollectEntries(en.fx.WideRoot, en.fx.Mem.get)
+		)
+	}
+	// The first page alone, at the widest directory: paging cost without
+	// the walk over everything behind it.
+	widest := fx.Dirs[len(fx.Dirs)-1]
+	out = append(out, Case{
+		Group: "fstree", Op: "fstree.list_entries", Workload: "widest/first-page-100", Threads: 1, Ops: 64 * 100,
+		Dims: Dims{Entries: int64(widest.Entries), Width: int64(widest.Entries), Depth: 1,
+			Shape: "wide", Content: "structured", Items: 64},
+		CrossChecksum: true,
+		Setup:         func(*Env) any { return nil },
+		Run: func(en *Env, _ any) uint64 {
+			acc := newFold()
+			for i := 0; i < 64; i++ {
+				es, more, err := fstree.ListEntries(widest.Root, nil, 100, en.fx.Mem.get)
 				if err != nil {
 					panic(err)
 				}
-				return uint64(len(es))
-			},
+				acc = foldU64(acc, uint64(len(es)))
+				acc = foldBool(acc, more)
+			}
+			return acc
 		},
-		Case{
-			Group: "fstree", Op: "fstree.resolve_path", Workload: "deep", Threads: 1, Ops: 256,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				var acc uint64
-				for i := 0; i < 256; i++ {
-					k, err := fstree.ResolvePath(en.fx.DeepRoot, en.fx.DeepPath, en.fx.Mem.get)
-					if err != nil {
-						panic(err)
+	})
+
+	// --- read paths: the depth sweep ------------------------------------
+	for _, ch := range fx.Chains {
+		ch := ch
+		ddims := Dims{Depth: int64(ch.Depth), Shape: "deep", Content: "structured",
+			Width: int64(fx.Dirs[0].Entries), Items: 256}
+		out = append(out,
+			Case{
+				Group: "fstree", Op: "fstree.resolve_path",
+				Workload: fmt.Sprintf("depth-%d", ch.Depth), Threads: 1, Ops: 256,
+				Dims: ddims, CrossChecksum: true,
+				Setup: func(*Env) any { return nil },
+				Run: func(en *Env, _ any) uint64 {
+					acc := newFold()
+					for i := 0; i < 256; i++ {
+						k, err := fstree.ResolvePath(ch.Root, ch.Path, en.fx.Mem.get)
+						if err != nil {
+							panic(err)
+						}
+						acc = foldKey(acc, k)
 					}
-					acc += uint64(k[0])
-				}
-				return acc
+					return acc
+				},
 			},
-		},
-		Case{
-			Group: "fstree", Op: "fstree.resolve_entry", Workload: "deep", Threads: 1, Ops: 256,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				var acc uint64
-				for i := 0; i < 256; i++ {
-					ent, err := fstree.ResolveEntry(en.fx.DeepRoot, en.fx.DeepPath+"/entry-00000000", en.fx.Mem.get)
-					if err != nil {
-						panic(err)
+			Case{
+				Group: "fstree", Op: "fstree.resolve_entry",
+				Workload: fmt.Sprintf("depth-%d", ch.Depth), Threads: 1, Ops: 256,
+				Dims: ddims, CrossChecksum: true,
+				Setup: func(*Env) any { return nil },
+				Run: func(en *Env, _ any) uint64 {
+					acc := newFold()
+					for i := 0; i < 256; i++ {
+						ent, err := fstree.ResolveEntry(ch.Root, ch.Path+"/entry-00000000", en.fx.Mem.get)
+						if err != nil {
+							panic(err)
+						}
+						acc = sinkBytes(acc, ent.Name)
+						acc = sinkBytes(acc, ent.ContentKey)
 					}
-					acc += uint64(len(ent.Name))
-				}
-				return acc
+					return acc
+				},
 			},
-		},
+		)
+	}
+
+	out = append(out,
 		Case{
 			Group: "fstree", Op: "fstree.write_content", Workload: "file-corpus", Threads: 1,
-			Ops: 1, Bytes: fx.FileBytes,
-			Setup: func(*Env) any { return nil },
+			Ops: int(fx.FileChunks), Bytes: fx.FileBytes, BytesKind: BytesPayload,
+			Dims: Dims{ItemBytes: fx.FileBytes, Entries: fx.FileChunks, Shape: "file-index",
+				Content: "text"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return nil },
 			Run: func(en *Env, _ any) uint64 {
 				var c countingWriter
 				if err := fstree.WriteContent(&c, en.fx.FileRoot, en.fx.Mem.get); err != nil {
 					panic(err)
 				}
-				return uint64(c.n)
+				return foldI64(newFold(), c.n)
 			},
 		},
 		// ReachableKeys and CheckComplete choose their own parallelism
 		// (GOMAXPROCS here, available_parallelism in Rust). Threads 0 marks
 		// that; the driver runs under a fixed CPU set so both cores see the
-		// same bound.
+		// same bound, and the effective width is recorded in the document's
+		// environment block.
 		Case{
-			Group: "fstree", Op: "fstree.reachable_keys", Workload: "wide", Threads: 0, Ops: 1,
-			Setup: func(*Env) any { return nil },
-			Run: func(en *Env, _ any) uint64 {
-				ks, err := fstree.ReachableKeys(en.fx.WideRoot, en.fx.Mem.get)
-				if err != nil {
-					panic(err)
-				}
-				return uint64(len(ks))
-			},
-		},
-		Case{
-			Group: "fstree", Op: "fstree.reachable_keys", Workload: "deep", Threads: 0, Ops: 1,
-			Setup: func(*Env) any { return nil },
+			Group: "fstree", Op: "fstree.reachable_keys", Workload: "deep", Threads: 0,
+			Ops:           fx.DeepDepth,
+			Dims:          Dims{Depth: int64(fx.DeepDepth), Shape: "deep", Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return nil },
 			Run: func(en *Env, _ any) uint64 {
 				ks, err := fstree.ReachableKeys(en.fx.DeepRoot, en.fx.Mem.get)
 				if err != nil {
 					panic(err)
 				}
-				return uint64(len(ks))
+				return foldU64(newFold(), uint64(len(ks)))
 			},
 		},
 		Case{
-			Group: "fstree", Op: "fstree.reachable_keys", Workload: "file-corpus", Threads: 0, Ops: 1,
-			Setup: func(*Env) any { return nil },
+			Group: "fstree", Op: "fstree.reachable_keys", Workload: "file-corpus", Threads: 0,
+			Ops:           int(fx.FileChunks),
+			Dims:          Dims{Entries: fx.FileChunks, Shape: "file-index", Content: "text"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return nil },
 			Run: func(en *Env, _ any) uint64 {
 				ks, err := fstree.ReachableKeys(en.fx.FileRoot, en.fx.Mem.get)
 				if err != nil {
 					panic(err)
 				}
-				return uint64(len(ks))
+				return foldU64(newFold(), uint64(len(ks)))
 			},
 		},
 	)
+	// Worker scaling, at the widest directory: the same walk asked for one
+	// worker and for the profile's concurrent count, so the row pair is a
+	// scaling measurement rather than two unrelated numbers.
 	for _, jobs := range []int{e.Profile.ThreadsSingle, e.Profile.ThreadsMulti} {
 		jobs := jobs
 		out = append(out, Case{
 			Group: "fstree", Op: "fstree.check_complete",
-			Workload: fmt.Sprintf("wide/jobs-%d", jobs), Threads: jobs, Ops: 1,
-			Setup: func(*Env) any { return nil },
+			Workload: fmt.Sprintf("widest/jobs-%d", jobs), Threads: jobs, Ops: int(widest.Objects),
+			Dims: Dims{Entries: int64(widest.Entries), Width: int64(widest.Entries),
+				Objects: widest.Objects, Shape: "wide", Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return nil },
 			Run: func(en *Env, _ any) uint64 {
-				ks, err := fstree.CheckComplete(en.fx.WideRoot, en.fx.Mem.get, en.fx.Mem.has, jobs)
+				ks, err := fstree.CheckComplete(widest.Root, en.fx.Mem.get, en.fx.Mem.has, jobs)
 				if err != nil {
 					panic(err)
 				}
-				return uint64(len(ks))
+				return foldU64(newFold(), uint64(len(ks)))
+			},
+		})
+	}
+	// The same walk across the width sweep, at one worker.
+	for _, d := range fx.Dirs {
+		d := d
+		out = append(out, Case{
+			Group: "fstree", Op: "fstree.check_complete",
+			Workload: fmt.Sprintf("width-%d/jobs-1", d.Entries), Threads: 1, Ops: int(d.Objects),
+			Dims: Dims{Entries: int64(d.Entries), Width: int64(d.Entries), Objects: d.Objects,
+				Shape: "wide", Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return nil },
+			Run: func(en *Env, _ any) uint64 {
+				ks, err := fstree.CheckComplete(d.Root, en.fx.Mem.get, en.fx.Mem.has, 1)
+				if err != nil {
+					panic(err)
+				}
+				return foldU64(newFold(), uint64(len(ks)))
 			},
 		})
 	}
 	out = append(out, Case{
-		Group: "fstree", Op: "fstree.check_complete", Workload: "incomplete/jobs-1", Threads: 1, Ops: 1,
-		Setup: func(*Env) any { return nil },
+		Group: "fstree", Op: "fstree.check_complete", Workload: "incomplete/jobs-1", Threads: 1,
+		Ops:           1,
+		Dims:          Dims{Entries: int64(fx.Dirs[0].Entries), Shape: "wide", Content: "structured"},
+		CrossChecksum: true,
+		Setup:         func(*Env) any { return nil },
 		Run: func(en *Env, _ any) uint64 {
 			_, err := fstree.CheckComplete(en.fx.IncompleteRoot, en.fx.IncompleteStore.get,
 				en.fx.IncompleteStore.has, 1)
 			var moe *fstree.MissingObjectError
-			if errors.As(err, &moe) {
-				return 1
+			if !errors.As(err, &moe) {
+				panic(fmt.Sprintf("expected a missing-object error, got %v", err))
 			}
-			panic(fmt.Sprintf("expected a missing-object error, got %v", err))
+			// The key the walk found missing is the output; folding it
+			// whole is what makes this a measurement of the walk.
+			return foldKey(newFold(), moe.Key)
 		},
 	})
 	return out

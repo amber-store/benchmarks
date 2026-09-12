@@ -12,8 +12,9 @@ use amber_store_core::packstore;
 use amber_store_core::refstore;
 
 use crate::env::{Env, Profile};
+use crate::fixtures::{fold_bool, fold_i64, fold_key, fold_str, fold_u64, new_fold};
 use crate::fixtures_build::store_options;
-use crate::harness::{Case, Recorder, State};
+use crate::harness::{Case, Dims, Recorder, State};
 use crate::stores::{copied_dir, dir_bytes};
 
 /// A collector over its own copy of the gc fixture.
@@ -85,6 +86,19 @@ fn open_gc_full(env: &Env, name: &str) -> GcState {
 
 pub fn cases(env: &Env) -> Vec<Case> {
     let t = env.profile.threads_multi;
+    // Every collection case runs over its own copy of the same fixture: a
+    // store holding one referenced tree plus enough unreferenced objects to
+    // fill whole sealed segments. `objects` is what a mark has to walk,
+    // `files` what the referenced tree covers.
+    let objects = env.profile.store_objects as i64;
+    let files = env.fx.v1_included.files;
+    let gdims = move |items: i64| Dims {
+        items,
+        objects,
+        files,
+        content: "structured".into(),
+        ..Default::default()
+    };
     let mut out = Vec::new();
 
     out.push(
@@ -106,9 +120,10 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     )
                     .unwrap(),
                 );
-                1
+                fold_bool(new_fold(), st.col.is_some())
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -122,9 +137,10 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let st = s.downcast_mut::<GcState>().unwrap();
                 st.col.take().unwrap().close().unwrap();
-                1
+                fold_bool(new_fold(), true)
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -143,9 +159,10 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     .prepare_ref(env.fx.gc_live_root)
                     .unwrap()
                     .commit();
-                1
+                fold_key(new_fold(), &env.fx.gc_live_root)
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -164,9 +181,10 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     .prepare_ref(env.fx.gc_live_root)
                     .unwrap()
                     .abort();
-                1
+                fold_key(new_fold(), &env.fx.gc_live_root)
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -180,15 +198,14 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|env, s| {
                 let st = s.downcast_ref::<GcState>().unwrap();
                 let col = st.col.as_ref().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for _ in 0..64 {
-                    if col.prepare_ref(env.fx.wide_root).is_err() {
-                        acc += 1;
-                    }
+                    acc = fold_bool(acc, col.prepare_ref(env.fx.wide_root).is_err());
                 }
                 acc
             }),
         )
+        .dims(gdims(64))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -202,15 +219,14 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|env, s| {
                 let st = s.downcast_ref::<GcState>().unwrap();
                 let col = st.col.as_ref().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for _ in 0..4096 {
-                    if col.release_ref(env.fx.gc_live_root).is_ok() {
-                        acc += 1;
-                    }
+                    acc = fold_bool(acc, col.release_ref(env.fx.gc_live_root).is_ok());
                 }
                 acc
             }),
         )
+        .dims(gdims(4096))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -224,9 +240,17 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let st = s.downcast_ref::<GcState>().unwrap();
                 let status = st.col.as_ref().unwrap().status().unwrap();
-                (status.marked + status.packs.len()) as u64
+                let mut acc = fold_i64(
+                    fold_i64(new_fold(), status.marked as i64),
+                    status.packs.len() as i64,
+                );
+                for pk in &status.packs {
+                    acc = fold_u64(acc, pk.id);
+                }
+                acc
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -239,14 +263,15 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|env| Box::new(open_gc_full(env, "gc-why")) as State),
             Box::new(|env, s| {
                 let st = s.downcast_ref::<GcState>().unwrap();
-                st.col
-                    .as_ref()
-                    .unwrap()
-                    .why(env.fx.gc_live_root)
-                    .unwrap()
-                    .len() as u64
+                let names = st.col.as_ref().unwrap().why(env.fx.gc_live_root).unwrap();
+                let mut acc = fold_i64(new_fold(), names.len() as i64);
+                for nm in &names {
+                    acc = fold_str(acc, nm);
+                }
+                acc
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -260,9 +285,17 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let st = s.downcast_ref::<GcState>().unwrap();
                 let stats = st.col.as_ref().unwrap().run(gc::DEFAULT_GARBAGE).unwrap();
-                stats.marked as u64 + stats.reaped.len() as u64
+                let mut acc = fold_i64(
+                    fold_i64(new_fold(), stats.marked as i64),
+                    stats.reaped.len() as i64,
+                );
+                for r in &stats.reaped {
+                    acc = fold_u64(acc, *r);
+                }
+                acc
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -280,9 +313,16 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let st = s.downcast_ref::<GcState>().unwrap();
                 let stats = st.col.as_ref().unwrap().run(gc::DEFAULT_GARBAGE).unwrap();
-                stats.marked as u64 + stats.scored as u64
+                fold_i64(
+                    fold_i64(
+                        fold_i64(new_fold(), stats.marked as i64),
+                        stats.scored as i64,
+                    ),
+                    stats.reaped.len() as i64,
+                )
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out.push(
@@ -305,9 +345,10 @@ pub fn cases(env: &Env) -> Vec<Case> {
                         refs.wipe().map_err(|e| e.to_string())
                     })
                     .unwrap();
-                1
+                fold_bool(new_fold(), true)
             }),
         )
+        .dims(gdims(1))
         .per_rep(Box::new(free_gc)),
     );
     out

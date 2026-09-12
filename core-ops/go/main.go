@@ -49,6 +49,18 @@ type Profile struct {
 	InboxPacks int `json:"inbox_packs"`
 	// BatchOps scales the batch size of the short, per-call operations.
 	BatchOps int `json:"batch_ops"`
+	// PayloadTotal is roughly how many bytes each point of the (size,
+	// content) payload grid holds, so every size class costs about the same
+	// and a per-byte rate is comparable along a row.
+	PayloadTotal int64 `json:"payload_total"`
+	// TreeWidths, TreeDepths and FanOuts are the swept dimensions of the
+	// in-memory tree cases: how many entries a directory holds, how many
+	// levels a resolved path descends, and how many children a file index
+	// covers. They are absolute counts, not fractions of the profile, so
+	// the same workload means the same thing in both profiles.
+	TreeWidths []int `json:"tree_widths"`
+	TreeDepths []int `json:"tree_depths"`
+	FanOuts    []int `json:"fan_outs"`
 }
 
 func quickProfile(seed uint64) Profile {
@@ -58,6 +70,10 @@ func quickProfile(seed uint64) Profile {
 		CorpusBytes: 4 << 20, TreeFiles: 120, TreeWide: 200, TreeDepth: 8,
 		SyntheticWide: 2000, StoreObjects: 1500, SegmentBytes: 2 << 20,
 		RefRecords: 200, InboxPacks: 8, BatchOps: 200,
+		PayloadTotal: 1 << 20,
+		TreeWidths:   []int{16, 256, 2000},
+		TreeDepths:   []int{1, 4, 8},
+		FanOuts:      []int{8, 128, 1024},
 	}
 }
 
@@ -68,6 +84,10 @@ func standardProfile(seed uint64) Profile {
 		CorpusBytes: 64 << 20, TreeFiles: 1200, TreeWide: 4000, TreeDepth: 24,
 		SyntheticWide: 40000, StoreObjects: 30000, SegmentBytes: 16 << 20,
 		RefRecords: 5000, InboxPacks: 48, BatchOps: 2000,
+		PayloadTotal: 8 << 20,
+		TreeWidths:   []int{16, 256, 4096, 40000},
+		TreeDepths:   []int{1, 4, 12, 24},
+		FanOuts:      []int{8, 128, 1024, 65536},
 	}
 }
 
@@ -94,14 +114,27 @@ type Identity struct {
 
 // Environment records the machine the samples were taken on.
 type Environment struct {
-	Host       string `json:"host"`
-	OS         string `json:"os"`
-	Arch       string `json:"arch"`
-	NumCPU     int    `json:"num_cpu"`
-	GOMAXPROCS int    `json:"gomaxprocs"`
-	Scratch    string `json:"scratch"`
-	ScratchFS  string `json:"scratch_fs"`
-	Xattrs     bool   `json:"xattrs"`
+	Host   string `json:"host"`
+	OS     string `json:"os"`
+	Arch   string `json:"arch"`
+	NumCPU int    `json:"num_cpu"`
+	// AutoParallelism is the worker count an operation that picks its own
+	// parallelism actually got, under the CPU set the driver was pinned to.
+	// The Rust driver records available_parallelism in the same field; the
+	// report requires the two to be equal, because an `auto` case measured
+	// at different widths is not a comparison.
+	AutoParallelism int `json:"auto_parallelism"`
+	// The same number under its native name, so the document says which
+	// primitive produced it.
+	GOMAXPROCS int `json:"gomaxprocs"`
+	// ForcedGCBeforeRep records that this driver runs a full garbage
+	// collection before every measured repetition. The Rust driver has no
+	// collector to run, so it reports false; the report states the
+	// asymmetry rather than hiding it.
+	ForcedGCBeforeRep bool   `json:"forced_gc_before_rep"`
+	Scratch           string `json:"scratch"`
+	ScratchFS         string `json:"scratch_fs"`
+	Xattrs            bool   `json:"xattrs"`
 }
 
 func cpuTime() (userNs, sysNs int64) {
@@ -145,11 +178,44 @@ func main() {
 		xattrs      = flag.Bool("xattrs", false, "the scratch filesystem accepts user.* extended attributes")
 		scratchFS   = flag.String("scratch-fs", "", "recorded filesystem type of the scratch directory")
 		only        = flag.String("only", "", "run only the groups in this comma-separated list")
+		wireDir     = flag.String("wire-dir", "", "directory holding both cores' wire packs (see --emit-wire)")
+		emitWire    = flag.Bool("emit-wire", false, "write this core's wire pack into --wire-dir and exit")
+		repBase     = flag.Int("rep-base", 0, "index of the first repetition this invocation measures")
+		repCount    = flag.Int("reps", 0, "how many repetitions this invocation measures (0 = the whole profile)")
 	)
 	flag.Parse()
 
+	var prof0 Profile
+	switch *profileName {
+	case "quick":
+		prof0 = quickProfile(*seed)
+	case "standard":
+		prof0 = standardProfile(*seed)
+	}
+
+	// The wire-pack production pass. Both cores encode the same object
+	// population, but their zstd encoders do not produce the same bytes, so
+	// the pack a decoder is measured against has to be a named artefact
+	// rather than "whatever this core happened to write". run.sh runs this
+	// pass for both cores first, and then hands both packs to both drivers.
+	if *emitWire {
+		if *wireDir == "" || prof0.Name == "" {
+			fmt.Fprintln(os.Stderr, "amber-core-ops-go: --emit-wire needs --wire-dir and a known --profile")
+			os.Exit(2)
+		}
+		if err := emitWirePack(prof0, *wireDir); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	if *out == "" || *scratch == "" {
 		fmt.Fprintln(os.Stderr, "amber-core-ops-go: --out and --scratch are required")
+		os.Exit(2)
+	}
+	if *wireDir == "" {
+		fmt.Fprintln(os.Stderr, "amber-core-ops-go: --wire-dir is required; run --emit-wire for both cores first")
 		os.Exit(2)
 	}
 
@@ -195,11 +261,27 @@ func main() {
 	host, _ := os.Hostname()
 	envInfo := Environment{
 		Host: host, OS: runtime.GOOS, Arch: runtime.GOARCH,
-		NumCPU: runtime.NumCPU(), GOMAXPROCS: runtime.GOMAXPROCS(0),
-		Scratch: *scratch, ScratchFS: *scratchFS, Xattrs: *xattrs,
+		NumCPU:          runtime.NumCPU(),
+		AutoParallelism: runtime.GOMAXPROCS(0), GOMAXPROCS: runtime.GOMAXPROCS(0),
+		ForcedGCBeforeRep: true,
+		Scratch:           *scratch, ScratchFS: *scratchFS, Xattrs: *xattrs,
 	}
 
-	env := &Env{Profile: prof, Scratch: *scratch, Xattrs: *xattrs}
+	reps := *repCount
+	if reps <= 0 {
+		reps = prof.Reps
+	}
+	if *repBase < 0 || *repBase+reps > prof.Reps {
+		fmt.Fprintf(os.Stderr,
+			"amber-core-ops-go: --rep-base %d --reps %d exceeds the profile's %d repetitions\n",
+			*repBase, reps, prof.Reps)
+		os.Exit(2)
+	}
+
+	env := &Env{
+		Profile: prof, Scratch: *scratch, Xattrs: *xattrs, WireDir: *wireDir,
+		RepBase: *repBase, RepCount: reps,
+	}
 	started := time.Now()
 
 	// Correctness first: the fixtures are built and validated before any

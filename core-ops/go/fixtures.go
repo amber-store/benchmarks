@@ -255,6 +255,16 @@ func stampPath(path, rel string) error {
 // really are identical -- including the timestamps ingest folds into every
 // entry -- before any timing is compared.
 func manifest(root string) (string, error) {
+	lines, err := manifestLines(root, nil)
+	if err != nil {
+		return "", err
+	}
+	return digestStrings(lines), nil
+}
+
+// manifestLines is manifest's listing, before it is digested, optionally
+// restricted to the paths keep accepts. A nil keep accepts everything.
+func manifestLines(root string, keep func(rel string, isDir bool) bool) ([]string, error) {
 	var lines []string
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -265,6 +275,12 @@ func manifest(root string) (string, error) {
 			return err
 		}
 		if rel == "." {
+			return nil
+		}
+		if keep != nil && !keep(rel, d.IsDir()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		info, err := d.Info()
@@ -292,8 +308,104 @@ func manifest(root string) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	sort.Strings(lines)
-	return digest([]byte(strings.Join(lines, "\n"))), nil
+	return lines, nil
 }
+
+// fixtureIncluded says whether one path of the fixture tree is expected to
+// survive ingest, by applying the .amberignore rules the harness itself
+// wrote into that tree ("*.tmp", "!keep.tmp", "/build/").
+//
+// It is deliberately an independent statement of the expectation: the
+// restored-tree check compares the complete restored listing against this,
+// not against anything either core computed. Two cores agreeing with each
+// other proves only that they agree.
+func fixtureIncluded(rel string, _ bool) bool {
+	if rel == "build" || strings.HasPrefix(rel, "build"+string(filepath.Separator)) {
+		return false
+	}
+	base := filepath.Base(rel)
+	if strings.HasSuffix(base, ".tmp") && base != "keep.tmp" {
+		return false
+	}
+	return true
+}
+
+// firstDifference reports the first line on which two sorted listings
+// disagree, so a failed comparison names the path rather than two hashes.
+func firstDifference(want, got []string) string {
+	for i := 0; i < len(want) || i < len(got); i++ {
+		var w, g string
+		if i < len(want) {
+			w = want[i]
+		}
+		if i < len(got) {
+			g = got[i]
+		}
+		if w != g {
+			return fmt.Sprintf("line %d of %d/%d: expected %q, restored %q", i, len(want), len(got), w, g)
+		}
+	}
+	return ""
+}
+
+// ---------------------------------------------------------------------------
+// Output folds
+// ---------------------------------------------------------------------------
+
+// Every measured case returns a fold of everything its calls produced, and
+// the driver records that fold in each sample. The fold serves two purposes
+// at once:
+//
+//   - nothing the case computed can be dead code, because the complete
+//     output reaches a value the driver writes to its report; and
+//   - the two cores' folds are directly comparable wherever they are
+//     specified to produce the same bytes, so a timing is accompanied by
+//     evidence that the operation really did the thing it is named after.
+//
+// The Rust driver implements the identical FNV-1a over the identical byte
+// sequences, which is what makes the second property hold.
+const (
+	fnvOffset uint64 = 14695981039346656037
+	fnvPrime  uint64 = 1099511628211
+)
+
+// newFold starts a fold.
+func newFold() uint64 { return fnvOffset }
+
+// foldBytes folds every byte of b, not a sample of them.
+func foldBytes(acc uint64, b []byte) uint64 {
+	for _, x := range b {
+		acc ^= uint64(x)
+		acc *= fnvPrime
+	}
+	return acc
+}
+
+// foldU64 folds a number as its eight little-endian bytes.
+func foldU64(acc, v uint64) uint64 {
+	for i := 0; i < 8; i++ {
+		acc ^= v & 0xFF
+		acc *= fnvPrime
+		v >>= 8
+	}
+	return acc
+}
+
+func foldI64(acc uint64, v int64) uint64 { return foldU64(acc, uint64(v)) }
+
+func foldStr(acc uint64, s string) uint64 { return foldBytes(acc, []byte(s)) }
+
+func foldBool(acc uint64, b bool) uint64 {
+	if b {
+		return foldU64(acc, 1)
+	}
+	return foldU64(acc, 0)
+}
+
+// foldKey folds all 32 bytes of a key: the type and length header and the
+// whole digest, so a case that constructs keys cannot be reduced to one that
+// only assembles headers.
+func foldKey(acc uint64, k key.Key) uint64 { return foldBytes(acc, k[:]) }

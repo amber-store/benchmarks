@@ -22,7 +22,9 @@ use std::time::SystemTime;
 use serde::Serialize;
 
 use crate::env::{Env, Environment, Identity, Profile, quick_profile, standard_profile};
-use crate::harness::{Check, Counter, Recorder, SAMPLE_SCHEMA, Sample, Unsupported};
+use crate::harness::{
+    Check, Counter, Encoding, Recorder, SAMPLE_SCHEMA, Sample, Unsupported, WireInput,
+};
 
 #[derive(Serialize)]
 struct Report {
@@ -38,7 +40,18 @@ struct Report {
     samples: Vec<Sample>,
     counters: Vec<Counter>,
     unsupported: Vec<Unsupported>,
+    encodings: Vec<Encoding>,
+    wire_inputs: Vec<WireInput>,
     blackhole: u64,
+}
+
+/// The machine's online CPU count. `available_parallelism` answers a
+/// different question -- how many workers this process may actually run --
+/// and both are recorded.
+fn online_cpus() -> usize {
+    // SAFETY: sysconf takes an int and returns a long; no pointers involved.
+    let n = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+    if n > 0 { n as usize } else { Env::auto_jobs() }
 }
 
 fn rfc3339(t: SystemTime) -> String {
@@ -91,7 +104,11 @@ core-ops/run.sh, which also builds the Go counterpart and the report.
   --harness-dirty            record the benchmark repository as dirty
   --xattrs                   the scratch filesystem accepts user.* xattrs
   --scratch-fs <type>        recorded filesystem type of the scratch directory
-  --only <a,b,c>             run only these module groups";
+  --only <a,b,c>             run only these module groups
+  --wire-dir <dir>           directory holding both cores' wire packs
+  --emit-wire                write this core's wire pack into --wire-dir and exit
+  --rep-base <n>             index of the first repetition this invocation measures
+  --reps <n>                 how many repetitions to measure (0 = the whole profile)";
 
 struct Args {
     profile: String,
@@ -106,6 +123,10 @@ struct Args {
     xattrs: bool,
     scratch_fs: String,
     only: Option<BTreeSet<String>>,
+    wire_dir: PathBuf,
+    emit_wire: bool,
+    rep_base: usize,
+    reps: usize,
 }
 
 fn parse_args() -> Args {
@@ -122,6 +143,10 @@ fn parse_args() -> Args {
         xattrs: false,
         scratch_fs: String::new(),
         only: None,
+        wire_dir: PathBuf::new(),
+        emit_wire: false,
+        rep_base: 0,
+        reps: 0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -154,6 +179,16 @@ fn parse_args() -> Args {
             "--harness-dirty" => a.harness_dirty = true,
             "--xattrs" => a.xattrs = true,
             "--scratch-fs" => a.scratch_fs = value(),
+            "--wire-dir" => a.wire_dir = PathBuf::from(value()),
+            "--emit-wire" => a.emit_wire = true,
+            "--rep-base" => {
+                let v = value();
+                a.rep_base = v.parse().unwrap_or_else(|_| panic!("bad --rep-base {v}"));
+            }
+            "--reps" => {
+                let v = value();
+                a.reps = v.parse().unwrap_or_else(|_| panic!("bad --reps {v}"));
+            }
             "--only" => {
                 a.only = Some(
                     value()
@@ -175,8 +210,21 @@ fn parse_args() -> Args {
         }
         i += 1;
     }
+    if a.emit_wire {
+        if a.wire_dir.as_os_str().is_empty() {
+            eprintln!("amber-core-ops-rs: --emit-wire needs --wire-dir");
+            std::process::exit(2);
+        }
+        return a;
+    }
     if a.out.as_os_str().is_empty() || a.scratch.as_os_str().is_empty() {
         eprintln!("amber-core-ops-rs: --out and --scratch are required");
+        std::process::exit(2);
+    }
+    if a.wire_dir.as_os_str().is_empty() {
+        eprintln!(
+            "amber-core-ops-rs: --wire-dir is required; run --emit-wire for both cores first"
+        );
         std::process::exit(2);
     }
     a
@@ -192,6 +240,29 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // The wire-pack production pass. Both cores encode the same object
+    // population, but their zstd encoders do not produce the same bytes, so
+    // the pack a decoder is measured against has to be a named artefact
+    // rather than "whatever this core happened to write". run.sh runs this
+    // pass for both cores first, and then hands both packs to both drivers.
+    if args.emit_wire {
+        fixtures_build::emit_wire_pack(&profile, &args.wire_dir).unwrap();
+        std::process::exit(0);
+    }
+
+    let reps = if args.reps == 0 {
+        profile.reps
+    } else {
+        args.reps
+    };
+    if args.rep_base + reps > profile.reps {
+        eprintln!(
+            "amber-core-ops-rs: --rep-base {} --reps {reps} exceeds the profile's {} repetitions",
+            args.rep_base, profile.reps
+        );
+        std::process::exit(2);
+    }
+
     std::fs::create_dir_all(&args.scratch).unwrap();
 
     let exe = std::env::current_exe().unwrap_or_default();
@@ -221,8 +292,14 @@ fn main() {
             .unwrap_or_default(),
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        num_cpu: Env::auto_jobs(),
+        // The machine's online CPU count, which is not the same number as
+        // the parallelism this process actually gets under a CPU set.
+        num_cpu: online_cpus(),
+        auto_parallelism: Env::auto_jobs(),
         available_parallelism: Env::auto_jobs(),
+        // This driver has no collector to run before a repetition; the Go
+        // driver does, and the report states the asymmetry.
+        forced_gc_before_rep: false,
         scratch: args.scratch.to_string_lossy().to_string(),
         scratch_fs: args.scratch_fs.clone(),
         xattrs: args.xattrs,
@@ -231,10 +308,13 @@ fn main() {
     let started = SystemTime::now();
     // Correctness first: the fixtures are built and validated before any
     // timing runs.
-    let fx = fixtures_build::build_fixtures(&args.scratch, &profile, args.xattrs);
+    let fx = fixtures_build::build_fixtures(&args.scratch, &args.wire_dir, &profile, args.xattrs);
     let env = Env {
         profile: profile.clone(),
         scratch: args.scratch.clone(),
+        wire_dir: args.wire_dir.clone(),
+        rep_base: args.rep_base,
+        rep_count: reps,
         xattrs: args.xattrs,
         fx,
     };
@@ -260,6 +340,8 @@ fn main() {
             samples: rec.samples.clone(),
             counters: rec.counters.clone(),
             unsupported: rec.unsupported.clone(),
+            encodings: rec.encodings.clone(),
+            wire_inputs: rec.wire_inputs.clone(),
             blackhole: rec.sink,
         };
         std::fs::write(

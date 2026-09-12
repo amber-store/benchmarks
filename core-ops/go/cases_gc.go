@@ -66,12 +66,24 @@ func openGCFull(e *Env, name string) *gcState {
 
 func gcCases(e *Env) []Case {
 	p := e.Profile
+	fx := e.fx
 	var out []Case
+
+	// Every collection case runs over its own copy of the same fixture: a
+	// store holding one referenced tree plus enough unreferenced objects to
+	// fill whole sealed segments. `objects` is what a mark has to walk,
+	// `files` what the referenced tree covers.
+	gdims := func(items int64) Dims {
+		return Dims{Items: items, Objects: int64(p.StoreObjects), Files: fx.V1Included.Files,
+			Content: "structured"}
+	}
 
 	out = append(out,
 		Case{
-			Group: "gc", Op: "gc.open", Workload: "populated", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGC(en, "gc-open") },
+			Group: "gc", Op: "gc.open", Workload: "populated", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGC(en, "gc-open") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*gcState)
 				col, err := gc.Open(filepath.Join(st.dir, "closures"), st.objs, st.refs, gcOptions(en.Profile))
@@ -79,27 +91,32 @@ func gcCases(e *Env) []Case {
 					panic(err)
 				}
 				st.col = col
-				return 1
+				return foldBool(newFold(), col != nil)
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
-			Group: "gc", Op: "gc.close", Workload: "idle", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-close") },
+			Group: "gc", Op: "gc.close", Workload: "idle", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-close") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*gcState)
-				if err := st.col.Close(); err != nil {
+				err := st.col.Close()
+				if err != nil {
 					panic(err)
 				}
 				st.col = nil
-				return 1
+				return foldBool(newFold(), true)
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
 			Group: "gc", Op: "gc.prepare_ref", Workload: "tree-root/commit", Threads: p.ThreadsMulti,
-			Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-prepare") },
+			Ops:    1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-prepare") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*gcState)
 				commit, _, err := st.col.PrepareRef(en.fx.GCLiveRoot)
@@ -107,14 +124,16 @@ func gcCases(e *Env) []Case {
 					panic(err)
 				}
 				commit()
-				return 1
+				return foldKey(newFold(), en.fx.GCLiveRoot)
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
 			Group: "gc", Op: "gc.prepare_ref", Workload: "tree-root/abort", Threads: p.ThreadsMulti,
-			Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-prepare-abort") },
+			Ops:    1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-prepare-abort") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*gcState)
 				_, abort, err := st.col.PrepareRef(en.fx.GCLiveRoot)
@@ -122,21 +141,22 @@ func gcCases(e *Env) []Case {
 					panic(err)
 				}
 				abort()
-				return 1
+				return foldKey(newFold(), en.fx.GCLiveRoot)
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
 			Group: "gc", Op: "gc.prepare_ref", Workload: "missing-root", Threads: p.ThreadsMulti,
-			Ops: 64, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-prepare-missing") },
+			Ops:    64,
+			Dims:   gdims(64),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-prepare-missing") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*gcState)
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < 64; i++ {
-					if _, _, err := st.col.PrepareRef(en.fx.WideRoot); err != nil {
-						acc++
-					}
+					_, _, err := st.col.PrepareRef(en.fx.WideRoot)
+					acc = foldBool(acc, err != nil)
 				}
 				return acc
 			},
@@ -144,60 +164,80 @@ func gcCases(e *Env) []Case {
 		},
 		Case{
 			Group: "gc", Op: "gc.release_ref", Workload: "batch", Threads: p.ThreadsMulti, Ops: 4096,
+			Dims:  gdims(4096),
 			Setup: func(en *Env) any { return openGCFull(en, "gc-release") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*gcState)
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < 4096; i++ {
-					if err := st.col.ReleaseRef(en.fx.GCLiveRoot); err == nil {
-						acc++
-					}
+					err := st.col.ReleaseRef(en.fx.GCLiveRoot)
+					acc = foldBool(acc, err == nil)
 				}
 				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
-			Group: "gc", Op: "gc.status", Workload: "mark+score", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-status") },
+			Group: "gc", Op: "gc.status", Workload: "mark+score", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-status") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*gcState)
 				status, err := st.col.Status(context.Background())
 				if err != nil {
 					panic(err)
 				}
-				return uint64(status.Marked + len(status.Packs))
+				acc := foldI64(foldI64(newFold(), int64(status.Marked)), int64(len(status.Packs)))
+				for _, pk := range status.Packs {
+					acc = foldU64(acc, pk.ID)
+				}
+				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
-			Group: "gc", Op: "gc.why", Workload: "live-root", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-why") },
+			Group: "gc", Op: "gc.why", Workload: "live-root", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-why") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*gcState)
 				names, err := st.col.Why(en.fx.GCLiveRoot)
 				if err != nil {
 					panic(err)
 				}
-				return uint64(len(names))
+				acc := foldI64(newFold(), int64(len(names)))
+				for _, nm := range names {
+					acc = foldStr(acc, nm)
+				}
+				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
-			Group: "gc", Op: "gc.run", Workload: "reclaimable-packs", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-run") },
+			Group: "gc", Op: "gc.run", Workload: "reclaimable-packs", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-run") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*gcState)
 				stats, err := st.col.Run(context.Background(), gc.DefaultGarbage)
 				if err != nil {
 					panic(err)
 				}
-				return uint64(stats.Marked) + uint64(len(stats.Reaped))
+				acc := foldI64(foldI64(newFold(), int64(stats.Marked)), int64(len(stats.Reaped)))
+				for _, r := range stats.Reaped {
+					acc = foldU64(acc, r)
+				}
+				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
-			Group: "gc", Op: "gc.run", Workload: "nothing-to-reclaim", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
+			Group: "gc", Op: "gc.run", Workload: "nothing-to-reclaim", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   gdims(1),
+			PerRep: true,
 			Setup: func(en *Env) any {
 				st := openGCFull(en, "gc-run-clean")
 				_, err := st.col.Run(context.Background(), gc.DefaultGarbage)
@@ -210,13 +250,16 @@ func gcCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return uint64(stats.Marked) + uint64(stats.Scored)
+				return foldI64(foldI64(foldI64(newFold(), int64(stats.Marked)),
+					int64(stats.Scored)), int64(len(stats.Reaped)))
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
 		Case{
-			Group: "gc", Op: "gc.wipe", Workload: "store-reset", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return openGCFull(en, "gc-wipe") },
+			Group: "gc", Op: "gc.wipe", Workload: "store-reset", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   gdims(1),
+			PerRep: true,
+			Setup:  func(en *Env) any { return openGCFull(en, "gc-wipe") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*gcState)
 				err := st.col.Wipe(func() error {
@@ -228,7 +271,7 @@ func gcCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return 1
+				return foldBool(newFold(), true)
 			},
 			Free: func(_ *Env, s any) { s.(*gcState).close() },
 		},
@@ -238,14 +281,15 @@ func gcCases(e *Env) []Case {
 		// records it as Go-only, and the report never pairs it.
 		Case{
 			Group: "gc", Op: "gc.begin_write", Workload: "gate-span", Threads: p.ThreadsMulti, Ops: 4096,
+			Dims:  gdims(4096),
 			Setup: func(en *Env) any { return openGCFull(en, "gc-beginwrite") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*gcState)
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < 4096; i++ {
 					done := st.col.BeginWrite()
 					done()
-					acc++
+					acc = foldBool(acc, true)
 				}
 				return acc
 			},

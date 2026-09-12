@@ -6,8 +6,10 @@ use std::path::PathBuf;
 use amber_store_core::{tarexport, tarextract};
 
 use crate::env::Env;
-use crate::fixtures::{digest, manifest};
-use crate::harness::{Case, Recorder, State};
+use crate::fixtures::{
+    digest, digest_strings, first_difference, fold_i64, manifest, manifest_lines, new_fold,
+};
+use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
 use crate::stores::work_dir;
 
 #[derive(Default)]
@@ -27,35 +29,46 @@ impl std::io::Write for CountingWriter {
 
 pub fn cases(env: &Env) -> Vec<Case> {
     let tar_len = env.fx.tar_bytes.len() as i64;
+    let files = env.fx.v1_included.files;
+    let tdims = || Dims {
+        files,
+        entries: files,
+        content: "tree".into(),
+        ..Default::default()
+    };
     vec![
         Case::new(
             "tar",
             "tarexport.write",
             "fixture-tree",
             1,
-            1,
+            files as usize,
             Box::new(|_| Box::new(()) as State),
             Box::new(|env, _| {
                 let mut c = CountingWriter::default();
                 tarexport::write(&mut c, env.fx.tree_root, |k| env.fx.tree_mem.get(k)).unwrap();
-                c.n as u64
+                fold_i64(new_fold(), c.n)
             }),
         )
-        .bytes(tar_len),
+        .bytes_of(tar_len, bytes_kind::ENCODED)
+        .dims(tdims())
+        .cross(),
         Case::new(
             "tar",
             "tarextract.extract",
             "fixture-tree",
             1,
-            1,
+            files as usize,
             Box::new(|env| Box::new(work_dir(env, "tar-extract")) as State),
             Box::new(|env, s| {
                 let dir = s.downcast_ref::<PathBuf>().unwrap();
                 tarextract::extract(&mut &env.fx.tar_bytes[..], dir).unwrap();
-                env.fx.tar_bytes.len() as u64
+                fold_i64(new_fold(), env.fx.tar_bytes.len() as i64)
             }),
         )
-        .bytes(tar_len)
+        .bytes_of(tar_len, bytes_kind::ENCODED)
+        .dims(tdims())
+        .cross()
         .per_rep(Box::new(|_, s| {
             let dir = s.downcast::<PathBuf>().unwrap();
             let _ = fs::remove_dir_all(&*dir);
@@ -107,32 +120,28 @@ pub fn checks(env: &Env, rec: &mut Recorder) {
         m_digest,
     );
 
-    let mut same = true;
-    let mut detail = String::new();
-    for rel in [
-        "data/d000/f000.bin",
-        "data/d000/keep.tmp",
-        "big.bin",
-        "wide/w000000.bin",
-    ] {
-        let want = fs::read(fx.tree_v1.join(rel));
-        let got = fs::read(dir.join(rel));
-        match (&want, &got) {
-            (Ok(a), Ok(b)) if a == b => {}
-            _ => {
-                same = false;
-                detail = format!("{rel}: {:?} / {:?}", want.err(), got.err());
-                break;
-            }
-        }
-    }
+    // The whole extracted tree is compared with the listing the harness
+    // derived from the source tree and the fixture's own ignore rules --
+    // every path, its type, its permissions, its size, its mtime, its
+    // content digest and its symlink target. A handful of spot-checked files
+    // would not be a restore verification, and two cores agreeing with each
+    // other would prove only that they agree.
+    let got = manifest_lines(&dir, None);
+    let want = &fx.v1_included_manifest;
+    let same = matches!(&got, Ok(g) if !want.is_empty() && g == want);
+    let empty: Vec<String> = Vec::new();
+    let got_lines = got.as_ref().unwrap_or(&empty);
     rec.want(
         "tar",
         "tarextract.extract",
-        "tar/extract-content-matches-source",
+        "tar/extract-is-the-included-source-tree",
         same,
-        format!("an extracted file differs from the source tree: {detail}"),
-        "ok",
+        format!(
+            "the extracted tree is not the included source tree: {:?}; {}",
+            got.as_ref().err(),
+            first_difference(want, got_lines)
+        ),
+        digest_strings(got_lines),
     );
 
     let link = fs::read_link(dir.join("links").join("ln000"));

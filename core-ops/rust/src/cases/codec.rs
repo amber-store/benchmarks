@@ -6,10 +6,13 @@ use amber_store_core::chunkers::{self, ByteOpts, ItemChunker};
 use amber_store_core::key::{self, Key, Type};
 use amber_store_core::reference;
 
-use crate::cases::{PAYLOAD_SETS, payload_set};
+use crate::cases::payload_set;
 use crate::env::Env;
-use crate::fixtures::{digest, digest_keys, digest_strings, digest_vecs, random_bytes};
-use crate::harness::{Case, Recorder, State};
+use crate::fixtures::{
+    digest, digest_keys, digest_strings, digest_vecs, fold_bool, fold_bytes, fold_i64, fold_key,
+    fold_str, fold_u64, new_fold, random_bytes, sink_bytes,
+};
+use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
 
 // ---------------------------------------------------------------------------
 // key
@@ -17,7 +20,11 @@ use crate::harness::{Case, Recorder, State};
 
 pub fn key_cases(env: &Env) -> Vec<Case> {
     let mut out = Vec::new();
-    for i in PAYLOAD_SETS {
+    // Key::new hashes the payload and assembles a header, so it is the
+    // clearest place to sweep the whole (size, content) grid: the header
+    // cost is constant and the hash cost is proportional, and the crossing
+    // point is visible in the plot.
+    for i in 0..env.fx.payloads.len() {
         let ps = payload_set(&env.fx, i);
         out.push(
             Case::new(
@@ -30,151 +37,198 @@ pub fn key_cases(env: &Env) -> Vec<Case> {
                 Box::new(move |env, s| {
                     let idx = *s.downcast_ref::<usize>().unwrap();
                     let ps = payload_set(&env.fx, idx);
-                    let mut acc = 0u64;
+                    let mut acc = new_fold();
                     for b in &ps.items {
                         let k = Key::new(Type::Blob, b.len() as u64, b);
-                        acc += k.as_bytes()[0] as u64;
+                        // The whole key, header and digest: 32 bytes, so the
+                        // hash bytes are observed without adding a second
+                        // pass over the payload.
+                        acc = fold_key(acc, &k);
                     }
                     acc
                 }),
             )
-            .bytes(ps.bytes),
+            .bytes(ps.bytes)
+            .dims(ps.dims())
+            .cross(),
         );
     }
 
-    out.push(Case::new(
-        "key",
-        "key.new_from_hash",
-        "batch",
-        1,
-        env.fx.keys.len(),
-        Box::new(|env| {
-            let hashes: Vec<[u8; 32]> = env
-                .fx
-                .keys
-                .iter()
-                .map(|k| {
-                    let mut h = [0u8; 32];
-                    h[..k.hash().len()].copy_from_slice(k.hash());
-                    h
-                })
-                .collect();
-            Box::new(hashes) as State
-        }),
-        Box::new(|_, s| {
-            let hashes = s.downcast_ref::<Vec<[u8; 32]>>().unwrap();
-            let mut acc = 0u64;
-            for (i, h) in hashes.iter().enumerate() {
-                let k = Key::new_from_hash(Type::Blob, i as u64, *h);
-                acc += k.as_bytes()[1] as u64;
-            }
-            acc
-        }),
-    ));
+    out.push(
+        Case::new(
+            "key",
+            "key.new_from_hash",
+            "batch",
+            1,
+            env.fx.keys.len(),
+            Box::new(|env| {
+                let hashes: Vec<[u8; 32]> = env
+                    .fx
+                    .keys
+                    .iter()
+                    .map(|k| {
+                        let mut h = [0u8; 32];
+                        h[..k.hash().len()].copy_from_slice(k.hash());
+                        h
+                    })
+                    .collect();
+                Box::new(hashes) as State
+            }),
+            Box::new(|_, s| {
+                let hashes = s.downcast_ref::<Vec<[u8; 32]>>().unwrap();
+                let mut acc = new_fold();
+                for (i, h) in hashes.iter().enumerate() {
+                    let k = Key::new_from_hash(Type::Blob, i as u64, *h);
+                    acc = fold_key(acc, &k);
+                }
+                acc
+            }),
+        )
+        .dims(Dims {
+            items: env.fx.keys.len() as i64,
+            item_bytes: 32,
+            content: "structured".into(),
+            ..Default::default()
+        })
+        .cross(),
+    );
 
-    out.push(Case::new(
-        "key",
-        "key.parse",
-        "canonical",
-        1,
-        env.fx.key_bytes.len(),
-        Box::new(|_| Box::new(()) as State),
-        Box::new(|env, _| {
-            let mut acc = 0u64;
-            for b in &env.fx.key_bytes {
-                let k = Key::parse(b).unwrap();
-                acc += k.as_bytes()[2] as u64;
-            }
-            acc
-        }),
-    ));
-    out.push(Case::new(
-        "key",
-        "key.parse",
-        "malformed",
-        1,
-        env.fx.bad_key_bytes.len() * 256,
-        Box::new(|_| Box::new(()) as State),
-        Box::new(|env, _| {
-            let mut acc = 0u64;
-            for _ in 0..256 {
-                for b in &env.fx.bad_key_bytes {
-                    if Key::parse(b).is_err() {
-                        acc += 1;
+    let structured = |items: usize| Dims {
+        items: items as i64,
+        item_bytes: 32,
+        content: "structured".into(),
+        ..Default::default()
+    };
+
+    out.push(
+        Case::new(
+            "key",
+            "key.parse",
+            "canonical",
+            1,
+            env.fx.key_bytes.len(),
+            Box::new(|_| Box::new(()) as State),
+            Box::new(|env, _| {
+                let mut acc = new_fold();
+                for b in &env.fx.key_bytes {
+                    let k = Key::parse(b).unwrap();
+                    acc = fold_key(acc, &k);
+                }
+                acc
+            }),
+        )
+        .dims(structured(env.fx.key_bytes.len()))
+        .cross(),
+    );
+    out.push(
+        Case::new(
+            "key",
+            "key.parse",
+            "malformed",
+            1,
+            env.fx.bad_key_bytes.len() * 256,
+            Box::new(|_| Box::new(()) as State),
+            Box::new(|env, _| {
+                let mut acc = new_fold();
+                for _ in 0..256 {
+                    for b in &env.fx.bad_key_bytes {
+                        acc = fold_bool(acc, Key::parse(b).is_err());
                     }
                 }
-            }
-            acc
-        }),
-    ));
-    out.push(Case::new(
-        "key",
-        "key.validate",
-        "canonical",
-        1,
-        env.fx.keys.len(),
-        Box::new(|_| Box::new(()) as State),
-        Box::new(|env, _| {
-            let mut acc = 0u64;
-            for k in &env.fx.keys {
-                if k.validate().is_ok() {
-                    acc += 1;
+                acc
+            }),
+        )
+        .dims(structured(env.fx.bad_key_bytes.len() * 256))
+        .cross(),
+    );
+    out.push(
+        Case::new(
+            "key",
+            "key.validate",
+            "canonical",
+            1,
+            env.fx.keys.len(),
+            Box::new(|_| Box::new(()) as State),
+            Box::new(|env, _| {
+                let mut acc = new_fold();
+                for k in &env.fx.keys {
+                    acc = fold_bool(acc, k.validate().is_ok());
                 }
-            }
-            acc
-        }),
-    ));
+                acc
+            }),
+        )
+        .dims(structured(env.fx.keys.len()))
+        .cross(),
+    );
     // The header accessors are single field reads; timing each one separately
     // would measure the loop, not the core. They are batched into one grouped
-    // case and the coverage matrix records that.
-    out.push(Case::new(
-        "key",
-        "key.accessors",
-        "type+length+length_size+hash",
-        1,
-        env.fx.keys.len() * 4,
-        Box::new(|_| Box::new(()) as State),
-        Box::new(|env, _| {
-            let mut acc = 0u64;
-            for k in &env.fx.keys {
-                acc += k.type_() as u64 + k.length() + k.length_size() as u64 + k.hash()[0] as u64;
-            }
-            acc
-        }),
-    ));
-    out.push(Case::new(
-        "key",
-        "key.string",
-        "hex",
-        1,
-        env.fx.keys.len(),
-        Box::new(|_| Box::new(()) as State),
-        Box::new(|env, _| {
-            let mut acc = 0u64;
-            for k in &env.fx.keys {
-                acc += k.to_string().len() as u64;
-            }
-            acc
-        }),
-    ));
-    out.push(Case::new(
-        "key",
-        "key.type_string",
-        "names",
-        1,
-        env.fx.keys.len(),
-        Box::new(|_| Box::new(()) as State),
-        Box::new(|env, _| {
-            let mut acc = 0u64;
-            for k in &env.fx.keys {
-                acc += k.type_().to_string().len() as u64;
-                if Type::is_valid(k.type_() as u8) {
-                    acc += 1;
+    // case and the coverage matrix records that. Every field, including the
+    // whole 31-byte digest, is consumed: reading one byte of the hash would
+    // let a compiler keep only that byte.
+    out.push(
+        Case::new(
+            "key",
+            "key.accessors",
+            "type+length+length_size+hash",
+            1,
+            env.fx.keys.len() * 4,
+            Box::new(|_| Box::new(()) as State),
+            Box::new(|env, _| {
+                let mut acc = new_fold();
+                for k in &env.fx.keys {
+                    acc = fold_u64(acc, k.type_() as u64);
+                    acc = fold_u64(acc, k.length());
+                    acc = fold_u64(acc, k.length_size() as u64);
+                    acc = fold_bytes(acc, k.hash());
                 }
-            }
-            acc
-        }),
-    ));
+                acc
+            }),
+        )
+        .dims(structured(env.fx.keys.len()))
+        .cross(),
+    );
+    out.push(
+        Case::new(
+            "key",
+            "key.string",
+            "hex",
+            1,
+            env.fx.keys.len(),
+            Box::new(|_| Box::new(()) as State),
+            Box::new(|env, _| {
+                let mut acc = new_fold();
+                for k in &env.fx.keys {
+                    // The rendering is short and fixed-length; folding it
+                    // whole is what makes the case a rendering measurement
+                    // rather than a length measurement.
+                    acc = fold_str(acc, &k.to_string());
+                }
+                acc
+            }),
+        )
+        .dims(structured(env.fx.keys.len()))
+        .cross(),
+    );
+    out.push(
+        Case::new(
+            "key",
+            "key.type_string",
+            "names",
+            1,
+            env.fx.keys.len(),
+            Box::new(|_| Box::new(()) as State),
+            Box::new(|env, _| {
+                let mut acc = new_fold();
+                for k in &env.fx.keys {
+                    acc = fold_str(acc, &k.type_().to_string());
+                    acc = fold_bool(acc, Type::is_valid(k.type_() as u8));
+                }
+                acc
+            }),
+        )
+        .dims(structured(env.fx.keys.len()))
+        .cross(),
+    );
     out
 }
 
@@ -306,10 +360,10 @@ const CODEC_REPS: usize = 64;
 pub fn cbor_cases(env: &Env) -> Vec<Case> {
     let mut out = Vec::new();
     for (name, large) in [("xattrs-3", false), ("xattrs-64", true)] {
-        let enc_len = if large {
-            env.fx.xattrs_large_enc.len()
+        let (enc_len, entry_count) = if large {
+            (env.fx.xattrs_large_enc.len(), env.fx.xattrs_large.len())
         } else {
-            env.fx.xattrs_small_enc.len()
+            (env.fx.xattrs_small_enc.len(), env.fx.xattrs_small.len())
         };
         out.push(
             Case::new(
@@ -326,14 +380,22 @@ pub fn cbor_cases(env: &Env) -> Vec<Case> {
                     } else {
                         &env.fx.xattrs_small
                     };
-                    let mut acc = 0u64;
+                    let mut acc = new_fold();
                     for _ in 0..CODEC_REPS {
-                        acc += cbor::encode_xattrs(m).len() as u64;
+                        acc = sink_bytes(acc, &cbor::encode_xattrs(m));
                     }
                     acc
                 }),
             )
-            .bytes((CODEC_REPS * enc_len) as i64),
+            .bytes_of((CODEC_REPS * enc_len) as i64, bytes_kind::ENCODED)
+            .dims(Dims {
+                items: CODEC_REPS as i64,
+                entries: entry_count as i64,
+                item_bytes: enc_len as i64,
+                content: "structured".into(),
+                ..Default::default()
+            })
+            .cross(),
         );
         out.push(
             Case::new(
@@ -350,14 +412,31 @@ pub fn cbor_cases(env: &Env) -> Vec<Case> {
                     } else {
                         &env.fx.xattrs_small_enc
                     };
-                    let mut acc = 0u64;
+                    let mut acc = new_fold();
                     for _ in 0..CODEC_REPS {
-                        acc += cbor::decode_xattrs(enc).unwrap().len() as u64;
+                        let got = cbor::decode_xattrs(enc).unwrap();
+                        // Every decoded value is consumed at its ends, so a
+                        // decoder that returned empty buffers could not
+                        // reproduce this number. The map is a BTreeMap, so
+                        // the order is the same in both cores.
+                        acc = fold_u64(acc, got.len() as u64);
+                        for (k, v) in &got {
+                            acc = fold_bytes(acc, k);
+                            acc = sink_bytes(acc, v);
+                        }
                     }
                     acc
                 }),
             )
-            .bytes((CODEC_REPS * enc_len) as i64),
+            .bytes_of((CODEC_REPS * enc_len) as i64, bytes_kind::ENCODED)
+            .dims(Dims {
+                items: CODEC_REPS as i64,
+                entries: entry_count as i64,
+                item_bytes: enc_len as i64,
+                content: "structured".into(),
+                ..Default::default()
+            })
+            .cross(),
         );
     }
     // Rust-only: the CBOR head and byte-string primitives are exported here
@@ -371,16 +450,18 @@ pub fn cbor_cases(env: &Env) -> Vec<Case> {
         4096 * 4,
         Box::new(|_| Box::new(()) as State),
         Box::new(|_, _| {
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             let mut buf = Vec::with_capacity(1 << 16);
             for i in 0..4096u64 {
                 buf.clear();
                 cbor::append_head(&mut buf, cbor::MAJOR_ARRAY, i);
                 cbor::append_bstr(&mut buf, &i.to_be_bytes());
                 let (major, n, rest) = cbor::read_head(&buf).unwrap();
-                acc += major as u64 + n;
-                let (b, _) = cbor::read_bstr(rest).unwrap();
-                acc += b.len() as u64;
+                acc = fold_u64(acc, major as u64);
+                acc = fold_u64(acc, n);
+                let (b, tail) = cbor::read_bstr(rest).unwrap();
+                acc = fold_bytes(acc, b);
+                acc = fold_u64(acc, tail.len() as u64);
             }
             acc
         }),
@@ -559,13 +640,58 @@ pub fn binaryfuse_checks(env: &Env, rec: &mut Recorder) {
 // chunkers
 // ---------------------------------------------------------------------------
 
+/// The second size configuration, so the boundary parameters are a measured
+/// dimension rather than a constant.
+fn small_byte_opts() -> ByteOpts {
+    ByteOpts {
+        min_size: 4 << 10,
+        normal_size: 16 << 10,
+        max_size: 64 << 10,
+        key: Vec::new(),
+    }
+}
+
+/// Splits a corpus once, at fixture time, to learn how many chunks it really
+/// produces. Never called inside a measured interval.
+fn count_chunks(data: &[u8], opts: Option<&ByteOpts>) -> usize {
+    let mut n = 0usize;
+    chunkers::split_bytes(data, opts, |_| {
+        n += 1;
+        Ok::<(), std::io::Error>(())
+    })
+    .unwrap();
+    n.max(1)
+}
+
 pub fn chunker_cases(env: &Env) -> Vec<Case> {
     let mut out = Vec::new();
+    // The chunk count of each corpus is measured here, outside every timed
+    // interval, so a per-chunk figure divides by the exact number of
+    // boundaries the splitter will find rather than by one.
+    let small_chunks = count_chunks(&env.fx.corpus_text, Some(&small_byte_opts()));
     // 0 = random corpus, 1 = compressible corpus, 2 = the first 64 KiB of it.
-    for (which, name, len) in [
-        (0usize, "random/default-sizes", env.fx.corpus_random.len()),
-        (1, "compressible/default-sizes", env.fx.corpus_text.len()),
-        (2, "tiny-64KiB/default-sizes", 64 << 10),
+    for (which, name, content, len, chunks) in [
+        (
+            0usize,
+            "random/default-sizes",
+            "random",
+            env.fx.corpus_random.len(),
+            count_chunks(&env.fx.corpus_random, None),
+        ),
+        (
+            1,
+            "compressible/default-sizes",
+            "text",
+            env.fx.corpus_text.len(),
+            count_chunks(&env.fx.corpus_text, None),
+        ),
+        (
+            2,
+            "tiny-64KiB/default-sizes",
+            "text",
+            64 << 10,
+            count_chunks(&env.fx.corpus_text[..64 << 10], None),
+        ),
     ] {
         out.push(
             Case::new(
@@ -573,7 +699,7 @@ pub fn chunker_cases(env: &Env) -> Vec<Case> {
                 "chunkers.split_bytes",
                 name,
                 1,
-                1,
+                chunks,
                 Box::new(move |_| Box::new(which) as State),
                 Box::new(move |env, s| {
                     let which = *s.downcast_ref::<usize>().unwrap();
@@ -582,16 +708,27 @@ pub fn chunker_cases(env: &Env) -> Vec<Case> {
                         1 => &env.fx.corpus_text,
                         _ => &env.fx.corpus_text[..64 << 10],
                     };
-                    let mut acc = 0u64;
+                    let mut acc = new_fold();
                     chunkers::split_bytes(data, None, |c| {
-                        acc += c.len() as u64;
+                        // The boundary list is the output; each chunk's
+                        // length is folded, which is O(chunks) rather than
+                        // O(bytes).
+                        acc = fold_u64(acc, c.len() as u64);
                         Ok::<(), std::io::Error>(())
                     })
                     .unwrap();
                     acc
                 }),
             )
-            .bytes(len as i64),
+            .bytes(len as i64)
+            .dims(Dims {
+                item_bytes: len as i64,
+                items: 1,
+                entries: chunks as i64,
+                content: content.into(),
+                ..Default::default()
+            })
+            .cross(),
         );
     }
     out.push(
@@ -600,65 +737,88 @@ pub fn chunker_cases(env: &Env) -> Vec<Case> {
             "chunkers.split_bytes",
             "compressible/4-16-64KiB",
             1,
-            1,
+            small_chunks,
             Box::new(|_| Box::new(()) as State),
             Box::new(|env, _| {
-                let opts = ByteOpts {
-                    min_size: 4 << 10,
-                    normal_size: 16 << 10,
-                    max_size: 64 << 10,
-                    key: Vec::new(),
-                };
-                let mut acc = 0u64;
+                let opts = small_byte_opts();
+                let mut acc = new_fold();
                 chunkers::split_bytes(&env.fx.corpus_text[..], Some(&opts), |c| {
-                    acc += c.len() as u64;
+                    acc = fold_u64(acc, c.len() as u64);
                     Ok::<(), std::io::Error>(())
                 })
                 .unwrap();
                 acc
             }),
         )
-        .bytes(env.fx.corpus_text.len() as i64),
+        .bytes(env.fx.corpus_text.len() as i64)
+        .dims(Dims {
+            item_bytes: env.fx.corpus_text.len() as i64,
+            items: 1,
+            entries: small_chunks as i64,
+            content: "text".into(),
+            ..Default::default()
+        })
+        .cross(),
     );
-    out.push(Case::new(
-        "chunkers",
-        "chunkers.item_chunker",
-        "is_boundary/bits-7",
-        1,
-        env.fx.item_encodings.len(),
-        Box::new(|_| Box::new(ItemChunker::new(7)) as State),
-        Box::new(|env, s| {
-            let ic = s.downcast_ref::<ItemChunker>().unwrap();
-            let mut acc = 0u64;
-            let mut run = 0usize;
-            for enc in &env.fx.item_encodings {
-                run += 1;
-                if ic.is_boundary(enc, run) {
-                    acc += 1;
-                    run = 0;
+    out.push(
+        Case::new(
+            "chunkers",
+            "chunkers.item_chunker",
+            "is_boundary/bits-7",
+            1,
+            env.fx.item_encodings.len(),
+            Box::new(|_| Box::new(ItemChunker::new(7)) as State),
+            Box::new(|env, s| {
+                let ic = s.downcast_ref::<ItemChunker>().unwrap();
+                let mut acc = new_fold();
+                let mut run = 0usize;
+                for enc in &env.fx.item_encodings {
+                    run += 1;
+                    let b = ic.is_boundary(enc, run);
+                    acc = fold_bool(acc, b);
+                    if b {
+                        run = 0;
+                    }
                 }
-            }
-            acc
-        }),
-    ));
-    out.push(Case::new(
-        "chunkers",
-        "chunkers.new_item_chunker",
-        "bits-4..12",
-        1,
-        9 * 256,
-        Box::new(|_| Box::new(()) as State),
-        Box::new(|_, _| {
-            let mut acc = 0u64;
-            for _ in 0..256 {
-                for bits in 4..=12u32 {
-                    let ic = ItemChunker::new(bits);
-                    acc += (ic.min_run + ic.max_run) as u64;
+                acc
+            }),
+        )
+        .dims(Dims {
+            items: env.fx.item_encodings.len() as i64,
+            item_bytes: 32,
+            content: "structured".into(),
+            ..Default::default()
+        })
+        .cross(),
+    );
+    out.push(
+        Case::new(
+            "chunkers",
+            "chunkers.new_item_chunker",
+            "bits-4..12",
+            1,
+            9 * 256,
+            Box::new(|_| Box::new(()) as State),
+            Box::new(|_, _| {
+                let mut acc = new_fold();
+                for _ in 0..256 {
+                    for bits in 4..=12u32 {
+                        let ic = ItemChunker::new(bits);
+                        acc = fold_u64(acc, ic.min_run as u64);
+                        acc = fold_u64(acc, ic.max_run as u64);
+                        std::hint::black_box(ic);
+                    }
                 }
-            }
-            acc
-        }),
-    ));
+                acc
+            }),
+        )
+        .dims(Dims {
+            items: 9 * 256,
+            content: "structured".into(),
+            ..Default::default()
+        })
+        .cross(),
+    );
     out
 }
 
@@ -769,6 +929,12 @@ fn ref_names() -> Vec<String> {
 
 pub fn reference_cases(env: &Env) -> Vec<Case> {
     let enc_len = env.fx.ref_record_enc.len();
+    let rdims = |items: i64, item_bytes: i64| Dims {
+        items,
+        item_bytes,
+        content: "structured".into(),
+        ..Default::default()
+    };
     vec![
         Case::new(
             "reference",
@@ -778,14 +944,16 @@ pub fn reference_cases(env: &Env) -> Vec<Case> {
             REF_REPS,
             Box::new(|_| Box::new(()) as State),
             Box::new(|env, _| {
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for _ in 0..REF_REPS {
-                    acc += env.fx.ref_record.encode().unwrap().len() as u64;
+                    acc = sink_bytes(acc, &env.fx.ref_record.encode().unwrap());
                 }
                 acc
             }),
         )
-        .bytes((REF_REPS * enc_len) as i64),
+        .bytes_of((REF_REPS * enc_len) as i64, bytes_kind::ENCODED)
+        .dims(rdims(REF_REPS as i64, enc_len as i64))
+        .cross(),
         Case::new(
             "reference",
             "reference.decode",
@@ -794,17 +962,24 @@ pub fn reference_cases(env: &Env) -> Vec<Case> {
             REF_REPS,
             Box::new(|_| Box::new(()) as State),
             Box::new(|env, _| {
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for _ in 0..REF_REPS {
-                    acc += reference::Reference::decode(&env.fx.ref_record_enc)
-                        .unwrap()
-                        .name
-                        .len() as u64;
+                    let r = reference::Reference::decode(&env.fx.ref_record_enc).unwrap();
+                    // Every decoded field, not just the name: the record is
+                    // small and fixed, so this stays constant-time.
+                    acc = fold_str(acc, &r.name);
+                    acc = fold_str(acc, &r.user);
+                    acc = fold_i64(acc, r.created_at);
+                    acc = sink_bytes(acc, &r.key);
+                    acc = sink_bytes(acc, &r.signature);
+                    acc = sink_bytes(acc, &r.public_key);
                 }
                 acc
             }),
         )
-        .bytes((REF_REPS * enc_len) as i64),
+        .bytes_of((REF_REPS * enc_len) as i64, bytes_kind::ENCODED)
+        .dims(rdims(REF_REPS as i64, enc_len as i64))
+        .cross(),
         Case::new(
             "reference",
             "reference.signature_payload",
@@ -813,13 +988,15 @@ pub fn reference_cases(env: &Env) -> Vec<Case> {
             REF_REPS,
             Box::new(|_| Box::new(()) as State),
             Box::new(|env, _| {
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for _ in 0..REF_REPS {
-                    acc += env.fx.ref_record.signature_payload().unwrap().len() as u64;
+                    acc = sink_bytes(acc, &env.fx.ref_record.signature_payload().unwrap());
                 }
                 acc
             }),
-        ),
+        )
+        .dims(rdims(REF_REPS as i64, 0))
+        .cross(),
         Case::new(
             "reference",
             "reference.validate_name",
@@ -829,15 +1006,15 @@ pub fn reference_cases(env: &Env) -> Vec<Case> {
             Box::new(|_| Box::new(ref_names()) as State),
             Box::new(|_, s| {
                 let names = s.downcast_ref::<Vec<String>>().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for n in names {
-                    if reference::validate_name(n).is_ok() {
-                        acc += 1;
-                    }
+                    acc = fold_bool(acc, reference::validate_name(n).is_ok());
                 }
                 acc
             }),
-        ),
+        )
+        .dims(rdims(256, 0))
+        .cross(),
         Case::new(
             "reference",
             "reference.validate_user",
@@ -847,15 +1024,18 @@ pub fn reference_cases(env: &Env) -> Vec<Case> {
             Box::new(|_| Box::new(ref_names()) as State),
             Box::new(|_, s| {
                 let names = s.downcast_ref::<Vec<String>>().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for n in names {
-                    if reference::validate_user(&format!("{n}@example.org")).is_ok() {
-                        acc += 1;
-                    }
+                    acc = fold_bool(
+                        acc,
+                        reference::validate_user(&format!("{n}@example.org")).is_ok(),
+                    );
                 }
                 acc
             }),
-        ),
+        )
+        .dims(rdims(256, 0))
+        .cross(),
     ]
 }
 

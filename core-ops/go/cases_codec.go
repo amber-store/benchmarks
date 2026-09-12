@@ -20,22 +20,29 @@ import (
 
 func keyCases(e *Env) []Case {
 	fx := e.fx
-	sets := []payloadSet{fx.Tiny, fx.Small, fx.Text, fx.Large, fx.Rand}
 	var out []Case
-	for _, ps := range sets {
+	// key.New hashes the payload and assembles a header, so it is the
+	// clearest place to sweep the whole (size, content) grid: the header
+	// cost is constant and the hash cost is proportional, and the crossing
+	// point is visible in the plot.
+	for _, ps := range fx.Payloads {
 		ps := ps
 		out = append(out, Case{
 			Group: "key", Op: "key.new", Workload: ps.Name, Threads: 1,
-			Ops: len(ps.Items), Bytes: ps.Bytes,
+			Ops: len(ps.Items), Bytes: ps.Bytes, BytesKind: BytesPayload,
+			Dims: ps.dims(), CrossChecksum: true,
 			Setup: func(*Env) any { return ps },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, b := range s.(payloadSet).Items {
 					k, err := key.New(key.Blob, uint64(len(b)), b)
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(k[0])
+					// The whole key, header and digest: 32 bytes, so the
+					// hash bytes are observed without adding a second pass
+					// over the payload.
+					acc = foldKey(acc, k)
 				}
 				return acc
 			},
@@ -49,48 +56,55 @@ func keyCases(e *Env) []Case {
 	out = append(out,
 		Case{
 			Group: "key", Op: "key.new_from_hash", Workload: "batch", Threads: 1,
-			Ops:   len(hashes),
-			Setup: func(*Env) any { return hashes },
+			Ops:  len(hashes),
+			Dims: Dims{Items: int64(len(hashes)), ItemBytes: 32, Content: "structured"},
+			// Rust's key fixture derives from the same seed, so the
+			// assembled keys are the same on both sides.
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return hashes },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for i, h := range s.([][32]byte) {
 					k, err := key.NewFromHash(key.Blob, uint64(i), h)
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(k[1])
+					acc = foldKey(acc, k)
 				}
 				return acc
 			},
 		},
 		Case{
 			Group: "key", Op: "key.parse", Workload: "canonical", Threads: 1,
-			Ops:   len(fx.KeyBytes),
-			Setup: func(*Env) any { return fx.KeyBytes },
+			Ops:           len(fx.KeyBytes),
+			Dims:          Dims{Items: int64(len(fx.KeyBytes)), ItemBytes: 32, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.KeyBytes },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, b := range s.([][]byte) {
 					k, err := key.Parse(b)
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(k[2])
+					acc = foldKey(acc, k)
 				}
 				return acc
 			},
 		},
 		Case{
 			Group: "key", Op: "key.parse", Workload: "malformed", Threads: 1,
-			Ops:   len(fx.BadKeyBytes) * 256,
-			Setup: func(*Env) any { return fx.BadKeyBytes },
+			Ops:           len(fx.BadKeyBytes) * 256,
+			Dims:          Dims{Items: int64(len(fx.BadKeyBytes) * 256), ItemBytes: 32, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.BadKeyBytes },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				bad := s.([][]byte)
 				for i := 0; i < 256; i++ {
 					for _, b := range bad {
-						if _, err := key.Parse(b); err != nil {
-							acc++
-						}
+						_, err := key.Parse(b)
+						acc = foldBool(acc, err != nil)
 					}
 				}
 				return acc
@@ -98,56 +112,68 @@ func keyCases(e *Env) []Case {
 		},
 		Case{
 			Group: "key", Op: "key.validate", Workload: "canonical", Threads: 1,
-			Ops:   len(fx.Keys),
-			Setup: func(*Env) any { return fx.Keys },
+			Ops:           len(fx.Keys),
+			Dims:          Dims{Items: int64(len(fx.Keys)), ItemBytes: 32, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.Keys },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, k := range s.([]key.Key) {
-					if k.Validate() == nil {
-						acc++
-					}
+					acc = foldBool(acc, k.Validate() == nil)
 				}
 				return acc
 			},
 		},
 		// The header accessors are single field reads; timing each one
 		// separately would measure the loop, not the core. They are batched
-		// into one grouped case and the coverage matrix records that.
+		// into one grouped case and the coverage matrix records that. Every
+		// field, including the whole 31-byte digest, is consumed: reading
+		// one byte of the hash would let a compiler keep only that byte.
 		Case{
 			Group: "key", Op: "key.accessors", Workload: "type+length+length_size+hash", Threads: 1,
-			Ops:   len(fx.Keys) * 4,
-			Setup: func(*Env) any { return fx.Keys },
+			Ops:           len(fx.Keys) * 4,
+			Dims:          Dims{Items: int64(len(fx.Keys)), ItemBytes: 32, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.Keys },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, k := range s.([]key.Key) {
-					acc += uint64(k.Type()) + k.Length() + uint64(k.LengthSize()) + uint64(k.Hash()[0])
+					acc = foldU64(acc, uint64(k.Type()))
+					acc = foldU64(acc, k.Length())
+					acc = foldU64(acc, uint64(k.LengthSize()))
+					acc = foldBytes(acc, k.Hash())
 				}
 				return acc
 			},
 		},
 		Case{
 			Group: "key", Op: "key.string", Workload: "hex", Threads: 1,
-			Ops:   len(fx.Keys),
-			Setup: func(*Env) any { return fx.Keys },
+			Ops:           len(fx.Keys),
+			Dims:          Dims{Items: int64(len(fx.Keys)), ItemBytes: 32, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.Keys },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, k := range s.([]key.Key) {
-					acc += uint64(len(k.String()))
+					// The rendering is short and fixed-length; folding it
+					// whole is what makes the case a rendering measurement
+					// rather than a length measurement.
+					acc = foldStr(acc, k.String())
 				}
 				return acc
 			},
 		},
 		Case{
 			Group: "key", Op: "key.type_string", Workload: "names", Threads: 1,
-			Ops:   len(fx.Keys),
-			Setup: func(*Env) any { return fx.Keys },
+			Ops:           len(fx.Keys),
+			Dims:          Dims{Items: int64(len(fx.Keys)), ItemBytes: 32, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.Keys },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, k := range s.([]key.Key) {
-					acc += uint64(len(k.Type().String()))
-					if k.Type().IsValid() {
-						acc++
-					}
+					acc = foldStr(acc, k.Type().String())
+					acc = foldBool(acc, k.Type().IsValid())
 				}
 				return acc
 			},
@@ -232,28 +258,39 @@ func cborCases(e *Env) []Case {
 		return []Case{
 			{
 				Group: "cbor", Op: "cbor.encode_xattrs", Workload: name, Threads: 1,
-				Ops: reps, Bytes: int64(reps * len(enc)),
-				Setup: func(*Env) any { return m },
+				Ops: reps, Bytes: int64(reps * len(enc)), BytesKind: BytesEncoded,
+				Dims:          Dims{Items: int64(reps), Entries: int64(len(m)), ItemBytes: int64(len(enc)), Content: "structured"},
+				CrossChecksum: true,
+				Setup:         func(*Env) any { return m },
 				Run: func(_ *Env, s any) uint64 {
-					var acc uint64
+					acc := newFold()
 					for i := 0; i < reps; i++ {
-						acc += uint64(len(encodeXattrs(s.(map[string][]byte))))
+						acc = sinkBytes(acc, encodeXattrs(s.(map[string][]byte)))
 					}
 					return acc
 				},
 			},
 			{
 				Group: "cbor", Op: "cbor.decode_xattrs", Workload: name, Threads: 1,
-				Ops: reps, Bytes: int64(reps * len(enc)),
-				Setup: func(*Env) any { return enc },
+				Ops: reps, Bytes: int64(reps * len(enc)), BytesKind: BytesEncoded,
+				Dims:          Dims{Items: int64(reps), Entries: int64(len(m)), ItemBytes: int64(len(enc)), Content: "structured"},
+				CrossChecksum: true,
+				Setup:         func(*Env) any { return enc },
 				Run: func(_ *Env, s any) uint64 {
-					var acc uint64
+					acc := newFold()
 					for i := 0; i < reps; i++ {
-						m, err := decodeXattrs(s.([]byte))
+						got, err := decodeXattrs(s.([]byte))
 						if err != nil {
 							panic(err)
 						}
-						acc += uint64(len(m))
+						// Every decoded value is consumed at its ends, so
+						// a decoder that returned empty buffers could not
+						// reproduce this number.
+						acc = foldU64(acc, uint64(len(got)))
+						for _, k := range sortedKeys(got) {
+							acc = foldStr(acc, k)
+							acc = sinkBytes(acc, got[k])
+						}
 					}
 					return acc
 				},
@@ -309,24 +346,33 @@ func cborChecks(e *Env) {
 func chunkerCases(e *Env) []Case {
 	fx := e.fx
 	var out []Case
+	// The chunk count of each corpus is measured here, outside every timed
+	// interval, so a per-chunk figure divides by the exact number of
+	// boundaries the splitter will find rather than by one.
 	corpora := []struct {
-		name string
-		data []byte
+		name    string
+		content string
+		data    []byte
+		chunks  int
 	}{
-		{"random", fx.CorpusRandom},
-		{"compressible", fx.CorpusText},
-		{"tiny-64KiB", fx.CorpusText[:64<<10]},
+		{"random", "random", fx.CorpusRandom, countChunks(fx.CorpusRandom, nil)},
+		{"compressible", "text", fx.CorpusText, countChunks(fx.CorpusText, nil)},
+		{"tiny-64KiB", "text", fx.CorpusText[:64<<10], countChunks(fx.CorpusText[:64<<10], nil)},
 	}
 	for _, c := range corpora {
 		c := c
 		out = append(out, Case{
 			Group: "chunkers", Op: "chunkers.split_bytes", Workload: c.name + "/default-sizes", Threads: 1,
-			Ops: 1, Bytes: int64(len(c.data)),
-			Setup: func(*Env) any { return c.data },
+			Ops: c.chunks, Bytes: int64(len(c.data)), BytesKind: BytesPayload,
+			Dims:          Dims{ItemBytes: int64(len(c.data)), Items: 1, Entries: int64(c.chunks), Content: c.content},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return c.data },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				err := chunkers.SplitBytes(bytes.NewReader(s.([]byte)), nil, func(chunk []byte) error {
-					acc += uint64(len(chunk))
+					// The boundary list is the output; each chunk's length
+					// is folded, which is O(chunks) rather than O(bytes).
+					acc = foldU64(acc, uint64(len(chunk)))
 					return nil
 				})
 				if err != nil {
@@ -341,12 +387,15 @@ func chunkerCases(e *Env) []Case {
 	small := &chunkers.ByteOpts{MinSize: 4 << 10, NormalSize: 16 << 10, MaxSize: 64 << 10}
 	out = append(out, Case{
 		Group: "chunkers", Op: "chunkers.split_bytes", Workload: "compressible/4-16-64KiB", Threads: 1,
-		Ops: 1, Bytes: int64(len(fx.CorpusText)),
-		Setup: func(*Env) any { return fx.CorpusText },
+		Ops: countChunks(fx.CorpusText, small), Bytes: int64(len(fx.CorpusText)), BytesKind: BytesPayload,
+		Dims: Dims{ItemBytes: int64(len(fx.CorpusText)), Items: 1,
+			Entries: int64(countChunks(fx.CorpusText, small)), Content: "text"},
+		CrossChecksum: true,
+		Setup:         func(*Env) any { return fx.CorpusText },
 		Run: func(_ *Env, s any) uint64 {
-			var acc uint64
+			acc := newFold()
 			err := chunkers.SplitBytes(bytes.NewReader(s.([]byte)), small, func(chunk []byte) error {
-				acc += uint64(len(chunk))
+				acc = foldU64(acc, uint64(len(chunk)))
 				return nil
 			})
 			if err != nil {
@@ -358,16 +407,19 @@ func chunkerCases(e *Env) []Case {
 	out = append(out,
 		Case{
 			Group: "chunkers", Op: "chunkers.item_chunker", Workload: "is_boundary/bits-7", Threads: 1,
-			Ops:   len(fx.ItemEncodings),
-			Setup: func(*Env) any { return chunkers.NewItemChunker(7) },
+			Ops:           len(fx.ItemEncodings),
+			Dims:          Dims{Items: int64(len(fx.ItemEncodings)), ItemBytes: 32, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return chunkers.NewItemChunker(7) },
 			Run: func(en *Env, s any) uint64 {
 				ic := s.(chunkers.ItemChunker)
-				var acc uint64
+				acc := newFold()
 				run := 0
 				for _, enc := range en.fx.ItemEncodings {
 					run++
-					if ic.IsBoundary(enc, run) {
-						acc++
+					b := ic.IsBoundary(enc, run)
+					acc = foldBool(acc, b)
+					if b {
 						run = 0
 					}
 				}
@@ -376,14 +428,18 @@ func chunkerCases(e *Env) []Case {
 		},
 		Case{
 			Group: "chunkers", Op: "chunkers.new_item_chunker", Workload: "bits-4..12", Threads: 1,
-			Ops:   9 * 256,
-			Setup: func(*Env) any { return nil },
+			Ops:           9 * 256,
+			Dims:          Dims{Items: 9 * 256, Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return nil },
 			Run: func(*Env, any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < 256; i++ {
 					for bits := 4; bits <= 12; bits++ {
 						ic := chunkers.NewItemChunker(bits)
-						acc += uint64(ic.MinRun + ic.MaxRun)
+						acc = foldU64(acc, uint64(ic.MinRun))
+						acc = foldU64(acc, uint64(ic.MaxRun))
+						blackBox(ic)
 					}
 				}
 				return acc
@@ -464,78 +520,91 @@ func referenceCases(e *Env) []Case {
 	return []Case{
 		{
 			Group: "reference", Op: "reference.encode", Workload: "signed", Threads: 1,
-			Ops: reps, Bytes: int64(reps * len(fx.RefRecordEnc)),
-			Setup: func(*Env) any { return fx.RefRecord },
+			Ops: reps, Bytes: int64(reps * len(fx.RefRecordEnc)), BytesKind: BytesEncoded,
+			Dims:          Dims{Items: int64(reps), ItemBytes: int64(len(fx.RefRecordEnc)), Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.RefRecord },
 			Run: func(_ *Env, s any) uint64 {
 				r := s.(reference.Reference)
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < reps; i++ {
 					b, err := r.Encode()
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(len(b))
+					acc = sinkBytes(acc, b)
 				}
 				return acc
 			},
 		},
 		{
 			Group: "reference", Op: "reference.decode", Workload: "signed", Threads: 1,
-			Ops: reps, Bytes: int64(reps * len(fx.RefRecordEnc)),
-			Setup: func(*Env) any { return fx.RefRecordEnc },
+			Ops: reps, Bytes: int64(reps * len(fx.RefRecordEnc)), BytesKind: BytesEncoded,
+			Dims:          Dims{Items: int64(reps), ItemBytes: int64(len(fx.RefRecordEnc)), Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.RefRecordEnc },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < reps; i++ {
 					r, err := reference.Decode(s.([]byte))
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(len(r.Name))
+					// Every decoded field, not just the name: the record is
+					// small and fixed, so this stays constant-time.
+					acc = foldStr(acc, r.Name)
+					acc = foldStr(acc, r.User)
+					acc = foldI64(acc, r.CreatedAt)
+					acc = sinkBytes(acc, r.Key)
+					acc = sinkBytes(acc, r.Signature)
+					acc = sinkBytes(acc, r.PublicKey)
 				}
 				return acc
 			},
 		},
 		{
 			Group: "reference", Op: "reference.signature_payload", Workload: "signed", Threads: 1,
-			Ops:   reps,
-			Setup: func(*Env) any { return fx.RefRecord },
+			Ops:           reps,
+			Dims:          Dims{Items: int64(reps), Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return fx.RefRecord },
 			Run: func(_ *Env, s any) uint64 {
 				r := s.(reference.Reference)
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < reps; i++ {
 					b, err := r.SignaturePayload()
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(len(b))
+					acc = sinkBytes(acc, b)
 				}
 				return acc
 			},
 		},
 		{
 			Group: "reference", Op: "reference.validate_name", Workload: "valid", Threads: 1,
-			Ops:   len(names),
-			Setup: func(*Env) any { return names },
+			Ops:           len(names),
+			Dims:          Dims{Items: int64(len(names)), Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return names },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, n := range s.([]string) {
-					if reference.ValidateName(n) == nil {
-						acc++
-					}
+					acc = foldBool(acc, reference.ValidateName(n) == nil)
 				}
 				return acc
 			},
 		},
 		{
 			Group: "reference", Op: "reference.validate_user", Workload: "valid", Threads: 1,
-			Ops:   len(names),
-			Setup: func(*Env) any { return names },
+			Ops:           len(names),
+			Dims:          Dims{Items: int64(len(names)), Content: "structured"},
+			CrossChecksum: true,
+			Setup:         func(*Env) any { return names },
 			Run: func(_ *Env, s any) uint64 {
-				var acc uint64
+				acc := newFold()
 				for _, n := range s.([]string) {
-					if reference.ValidateUser(n+"@example.org") == nil {
-						acc++
-					}
+					acc = foldBool(acc, reference.ValidateUser(n+"@example.org") == nil)
 				}
 				return acc
 			},
@@ -579,6 +648,28 @@ func referenceChecks(e *Env) {
 	e.want("reference", "reference.validate_user", "reference/user-rules",
 		reference.ValidateUser("a@b.example") == nil && reference.ValidateUser("") != nil,
 		"user validation disagrees with the documented rules", "ok")
+}
+
+// countChunks splits a corpus once, at fixture time, to learn how many
+// chunks it really produces. Never called inside a measured interval.
+func countChunks(data []byte, opts *chunkers.ByteOpts) int {
+	n := 0
+	must(chunkers.SplitBytes(bytes.NewReader(data), opts, func([]byte) error { n++; return nil }))
+	if n == 0 {
+		n = 1
+	}
+	return n
+}
+
+// sortedKeys returns a map's keys in ascending order, so a fold over a Go
+// map does not depend on iteration order.
+func sortedKeys(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // sortedNames is a small helper the tree cases share.

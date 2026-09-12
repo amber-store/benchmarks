@@ -28,6 +28,15 @@ pub struct Profile {
     pub ref_records: usize,
     pub inbox_packs: usize,
     pub batch_ops: usize,
+    /// Roughly how many bytes each point of the (size, content) payload grid
+    /// holds, so every size class costs about the same.
+    pub payload_total: i64,
+    /// The swept dimensions of the in-memory tree cases: how many entries a
+    /// directory holds, how many levels a resolved path descends, and how
+    /// many children a file index covers.
+    pub tree_widths: Vec<usize>,
+    pub tree_depths: Vec<usize>,
+    pub fan_outs: Vec<usize>,
 }
 
 pub fn quick_profile(seed: u64) -> Profile {
@@ -48,6 +57,10 @@ pub fn quick_profile(seed: u64) -> Profile {
         ref_records: 200,
         inbox_packs: 8,
         batch_ops: 200,
+        payload_total: 1 << 20,
+        tree_widths: vec![16, 256, 2000],
+        tree_depths: vec![1, 4, 8],
+        fan_outs: vec![8, 128, 1024],
     }
 }
 
@@ -69,6 +82,10 @@ pub fn standard_profile(seed: u64) -> Profile {
         ref_records: 5000,
         inbox_packs: 48,
         batch_ops: 2000,
+        payload_total: 8 << 20,
+        tree_widths: vec![16, 256, 4096, 40000],
+        tree_depths: vec![1, 4, 12, 24],
+        fan_outs: vec![8, 128, 1024, 65536],
     }
 }
 
@@ -99,7 +116,20 @@ pub struct Environment {
     pub os: String,
     pub arch: String,
     pub num_cpu: usize,
+    /// The worker count an operation that picks its own parallelism actually
+    /// got, under the CPU set the driver was pinned to. The Go driver
+    /// records GOMAXPROCS in the same field; the report requires the two to
+    /// be equal, because an `auto` case measured at different widths is not
+    /// a comparison.
+    pub auto_parallelism: usize,
+    /// Kept under its native name as well, so the document says which
+    /// primitive produced the number above.
     pub available_parallelism: usize,
+    /// Whether the driver forces a garbage collection before every measured
+    /// repetition. The Go driver does; this one has no collector to run, so
+    /// it is false here and the report states the asymmetry rather than
+    /// hiding it.
+    pub forced_gc_before_rep: bool,
     pub scratch: String,
     pub scratch_fs: String,
     pub xattrs: bool,
@@ -110,6 +140,16 @@ pub struct Environment {
 pub struct Env {
     pub profile: Profile,
     pub scratch: PathBuf,
+    /// The directory holding one wire pack per producing core, written by
+    /// the `--emit-wire` pass before either driver measures anything.
+    #[allow(dead_code)]
+    pub wire_dir: PathBuf,
+    /// The slice of the profile's repetitions this invocation measures.
+    /// run.sh makes two passes in opposite core order and merges them, so
+    /// neither core is systematically measured on a colder machine; see
+    /// `../../../run.sh`.
+    pub rep_base: usize,
+    pub rep_count: usize,
     /// Whether the scratch filesystem accepted the fixture's extended
     /// attributes; recorded in the report so a run without them is not read
     /// as one with them.

@@ -10,8 +10,11 @@ use amber_store_core::key::Key;
 use amber_store_core::refstore;
 
 use crate::env::Env;
-use crate::fixtures::{digest, digest_strings, key_bytes};
-use crate::harness::{Case, Recorder, State};
+use crate::fixtures::{
+    digest, digest_strings, fold_bool, fold_bytes, fold_i64, fold_key, fold_str, key_bytes,
+    new_fold, sink_bytes,
+};
+use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
 use crate::stores::{
     RefHandle, StoreHandle, copied_dir, copied_refs, fresh_refs, fresh_store, work_dir,
 };
@@ -49,6 +52,16 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
         .map(|i| format!("bench/absent/{i:06}"))
         .collect();
 
+    let (h2len, m2len) = (hits.len(), misses.len());
+    // Every refstore case is described by how many records the store holds
+    // and how many calls one measured interval makes.
+    let rdims = |entries: i64, items: i64| Dims {
+        entries,
+        items,
+        content: "structured".into(),
+        ..Default::default()
+    };
+
     let mut out = Vec::new();
     out.push(
         Case::new(
@@ -65,10 +78,13 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             }),
             Box::new(|_, s| {
                 let st = s.downcast_mut::<RefOpenState>().unwrap();
-                st.st = Some(refstore::Store::open(&st.dir, false).unwrap());
-                1
+                let store = refstore::Store::open(&st.dir, false).unwrap();
+                let empty = store.all().unwrap().is_empty();
+                st.st = Some(store);
+                fold_bool(new_fold(), empty)
             }),
         )
+        .dims(rdims(0, 1))
         .per_rep(Box::new(free_ref_open)),
     );
     out.push(
@@ -87,11 +103,12 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let st = s.downcast_mut::<RefOpenState>().unwrap();
                 let store = refstore::Store::open(&st.dir, false).unwrap();
-                let n = store.get(REF_PROBE).unwrap().len() as u64;
+                let acc = sink_bytes(new_fold(), &store.get(REF_PROBE).unwrap());
                 st.st = Some(store);
-                n
+                acc
             }),
         )
+        .dims(rdims(n as i64, 1))
         .per_rep(Box::new(free_ref_open)),
     );
     // Go's refstore exposes Close; the redb port closes on drop and exports
@@ -111,9 +128,10 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let st = s.downcast_mut::<RefOpenState>().unwrap();
                 drop(st.st.take());
-                1
+                fold_bool(new_fold(), true)
             }),
         )
+        .dims(rdims(n as i64, 1))
         .per_rep(Box::new(free_ref_open)),
     );
 
@@ -128,14 +146,15 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
                 Box::new(move |env| Box::new(fresh_refs(env, "rs-put", sync)) as State),
                 Box::new(|env, s| {
                     let h = s.downcast_ref::<RefHandle>().unwrap();
-                    let mut acc = 0u64;
+                    let mut acc = new_fold();
                     for r in &env.fx.ref_batch {
                         h.store().put(&r.name, &r.data).unwrap();
-                        acc += r.data.len() as u64;
+                        acc = fold_bool(acc, true);
                     }
                     acc
                 }),
             )
+            .dims(rdims(n as i64, n as i64))
             .per_rep(Box::new(free_ref_handle)),
         );
     }
@@ -150,9 +169,10 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             Box::new(|env, s| {
                 let h = s.downcast_ref::<RefHandle>().unwrap();
                 h.store().put_batch(&env.fx.ref_batch).unwrap();
-                env.fx.ref_batch.len() as u64
+                fold_i64(new_fold(), env.fx.ref_batch.len() as i64)
             }),
         )
+        .dims(rdims(n as i64, n as i64))
         .per_rep(Box::new(free_ref_handle)),
     );
     let h2 = hits.clone();
@@ -168,13 +188,14 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             }),
             Box::new(move |_, s| {
                 let h = s.downcast_ref::<RefHandle>().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for name in &h2 {
-                    acc += h.store().get(name).unwrap().len() as u64;
+                    acc = sink_bytes(acc, &h.store().get(name).unwrap());
                 }
                 acc
             }),
         )
+        .dims(rdims(n as i64, h2len as i64))
         .per_rep(Box::new(free_ref_handle)),
     );
     let m2 = misses.clone();
@@ -195,15 +216,17 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             }),
             Box::new(move |_, s| {
                 let h = s.downcast_ref::<RefHandle>().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for name in &m2 {
-                    if matches!(h.store().get(name), Err(e) if e.is_not_found()) {
-                        acc += 1;
-                    }
+                    acc = fold_bool(
+                        acc,
+                        matches!(h.store().get(name), Err(e) if e.is_not_found()),
+                    );
                 }
                 acc
             }),
         )
+        .dims(rdims(n as i64, m2len as i64))
         .per_rep(Box::new(free_ref_handle)),
     );
     out.push(
@@ -212,19 +235,26 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             "refstore.all",
             &format!("records-{n}"),
             1,
-            1,
+            n,
             Box::new(|env| {
                 Box::new(copied_refs(env, &env.fx.refs_template, "rs-all", false)) as State
             }),
             Box::new(|_, s| {
-                s.downcast_ref::<RefHandle>()
+                let recs = s
+                    .downcast_ref::<RefHandle>()
                     .unwrap()
                     .store()
                     .all()
-                    .unwrap()
-                    .len() as u64
+                    .unwrap();
+                let mut acc = fold_i64(new_fold(), recs.len() as i64);
+                for r in &recs {
+                    acc = fold_str(acc, &r.name);
+                    acc = sink_bytes(acc, &r.data);
+                }
+                acc
             }),
         )
+        .dims(rdims(n as i64, 1))
         .per_rep(Box::new(free_ref_handle)),
     );
     out.push(
@@ -239,14 +269,15 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
             }),
             Box::new(|env, s| {
                 let h = s.downcast_ref::<RefHandle>().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for name in &env.fx.ref_names {
                     h.store().delete(name).unwrap();
-                    acc += 1;
+                    acc = fold_bool(acc, true);
                 }
                 acc
             }),
         )
+        .dims(rdims(n as i64, n as i64))
         .per_rep(Box::new(free_ref_handle)),
     );
     out.push(
@@ -260,14 +291,12 @@ pub fn refstore_cases(env: &Env) -> Vec<Case> {
                 Box::new(copied_refs(env, &env.fx.refs_template, "rs-wipe", false)) as State
             }),
             Box::new(|_, s| {
-                s.downcast_ref::<RefHandle>()
-                    .unwrap()
-                    .store()
-                    .wipe()
-                    .unwrap();
-                1
+                let h = s.downcast_ref::<RefHandle>().unwrap();
+                h.store().wipe().unwrap();
+                fold_i64(new_fold(), h.store().all().unwrap().len() as i64)
             }),
         )
+        .dims(rdims(n as i64, 1))
         .per_rep(Box::new(free_ref_handle)),
     );
     out
@@ -437,8 +466,10 @@ fn free_inbox(_: &Env, s: State) {
     s.downcast::<InboxState>().unwrap().close();
 }
 
+/// The payload the staged packs carry. The packs' own encoded sizes differ
+/// between the cores, so the shared denominator is the logical content.
 fn inbox_bytes(env: &Env) -> i64 {
-    env.fx.inbox_packs.iter().map(|b| b.len() as i64).sum()
+    env.fx.inbox_logical_bytes
 }
 
 pub fn inbox_cases(env: &Env) -> Vec<Case> {
@@ -446,6 +477,14 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
     let workers = p.threads_multi;
     let packs = p.inbox_packs;
     let bytes = inbox_bytes(env);
+    // Every inbox case handles the same staged pack set: `items` is how many
+    // packs, `objects` how many objects they carry between them.
+    let idims = Dims {
+        items: packs as i64,
+        objects: (packs * 32) as i64,
+        content: "structured".into(),
+        ..Default::default()
+    };
     let mut out = Vec::new();
 
     out.push(
@@ -469,9 +508,14 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
                 let is = s.downcast_mut::<InboxState>().unwrap();
                 let arc = Arc::clone(is.store.as_ref().unwrap().st.as_ref().unwrap());
                 is.ib = Some(Inbox::open(&is.dir, arc, workers, None).unwrap());
-                1
+                fold_bool(new_fold(), is.ib.is_some())
             }),
         )
+        .dims(Dims {
+            items: 1,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_inbox)),
     );
     out.push(
@@ -493,9 +537,10 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
                 let is = s.downcast_mut::<InboxState>().unwrap();
                 let arc = Arc::clone(is.store.as_ref().unwrap().st.as_ref().unwrap());
                 is.ib = Some(Inbox::open(&is.dir, arc, workers, None).unwrap());
-                1
+                fold_bool(new_fold(), is.ib.is_some())
             }),
         )
+        .dims(idims.clone())
         .per_rep(Box::new(free_inbox)),
     );
     out.push(
@@ -509,10 +554,15 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
             Box::new(|env, s| {
                 let is = s.downcast_mut::<InboxState>().unwrap();
                 is.stage_all(env);
-                is.tmps.len() as u64
+                let mut acc = fold_i64(new_fold(), is.tmps.len() as i64);
+                for h in &is.hashes {
+                    acc = fold_bytes(acc, h);
+                }
+                acc
             }),
         )
         .bytes(bytes)
+        .dims(idims.clone())
         .per_rep(Box::new(free_inbox)),
     );
     out.push(
@@ -530,12 +580,15 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let is = s.downcast_ref::<InboxState>().unwrap();
                 let ib = is.ib.as_ref().unwrap();
+                let mut acc = new_fold();
                 for tmp in &is.tmps {
                     ib.discard(tmp);
+                    acc = fold_str(acc, &tmp.to_string_lossy());
                 }
-                is.tmps.len() as u64
+                acc
             }),
         )
+        .dims(idims.clone())
         .per_rep(Box::new(free_inbox)),
     );
     out.push(
@@ -553,22 +606,22 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
             Box::new(|env, s| {
                 let is = s.downcast_ref::<InboxState>().unwrap();
                 let ib = is.ib.as_ref().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for (i, tmp) in is.tmps.iter().enumerate() {
-                    if ib
+                    let added = ib
                         .commit(tmp, &is.hashes[i], env.fx.inbox_roots[i])
-                        .unwrap()
-                    {
-                        acc += 1;
-                    }
+                        .unwrap();
+                    acc = fold_bool(acc, added);
                 }
                 for root in &env.fx.inbox_roots {
                     ib.wait_for(*root);
+                    acc = fold_key(acc, root);
                 }
                 acc
             }),
         )
         .bytes(bytes)
+        .dims(idims.clone())
         .per_rep(Box::new(free_inbox)),
     );
     out.push(
@@ -602,18 +655,17 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
             Box::new(|env, s| {
                 let is = s.downcast_ref::<InboxState>().unwrap();
                 let ib = is.ib.as_ref().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for (i, tmp) in is.tmps.iter().enumerate() {
-                    if !ib
+                    let added = ib
                         .commit(tmp, &is.hashes[i], env.fx.inbox_roots[i])
-                        .unwrap()
-                    {
-                        acc += 1;
-                    }
+                        .unwrap();
+                    acc = fold_bool(acc, added);
                 }
                 acc
             }),
         )
+        .dims(idims.clone())
         .per_rep(Box::new(free_inbox)),
     );
     out.push(
@@ -638,9 +690,10 @@ pub fn inbox_cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let is = s.downcast_mut::<InboxState>().unwrap();
                 is.ib.take().unwrap().close();
-                1
+                fold_bool(new_fold(), true)
             }),
         )
+        .dims(idims.clone())
         .per_rep(Box::new(free_inbox)),
     );
     out

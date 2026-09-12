@@ -34,41 +34,18 @@ pub fn object_seq(objs: &[Object]) -> Vec<Result<packstore::Object, io::Error>> 
         .collect()
 }
 
-pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
+pub fn build_fixtures(scratch: &Path, wire_dir: &Path, p: &Profile, xattrs: bool) -> Fixtures {
     let seed = p.seed;
     let corpus_random = random_bytes(seed + 1, p.corpus_bytes as usize);
     let corpus_text = compressible_bytes(seed + 2, p.corpus_bytes as usize);
 
     let batch = p.batch_ops;
-    let tiny = new_payload_set("tiny-64B-random", batch, 64, seed + 10, false);
-    let small = new_payload_set(
-        "small-4KiB-random",
-        (batch / 8).max(32),
-        4 << 10,
-        seed + 11,
-        false,
-    );
-    let text = new_payload_set(
-        "small-4KiB-text",
-        (batch / 8).max(32),
-        4 << 10,
-        seed + 12,
-        true,
-    );
-    let large = new_payload_set(
-        "large-1MiB-text",
-        (batch / 256).max(4),
-        1 << 20,
-        seed + 13,
-        true,
-    );
-    let rand = new_payload_set(
-        "large-1MiB-random",
-        (batch / 256).max(4),
-        1 << 20,
-        seed + 14,
-        false,
-    );
+    let payloads = build_payload_matrix(p);
+    let tiny = payload_named(&payloads, "tiny-64B-random").clone();
+    let small = payload_named(&payloads, "4KiB-random").clone();
+    let text = payload_named(&payloads, "4KiB-text").clone();
+    let large = payload_named(&payloads, "1MiB-text").clone();
+    let rand = payload_named(&payloads, "1MiB-random").clone();
 
     let (keys, key_bytes_v, bad_key_bytes) = build_key_fixtures(p);
     let (xattrs_small, xattrs_large) = build_xattr_fixtures(p);
@@ -87,49 +64,173 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
         .map(|i| keys[i % keys.len()].as_bytes().to_vec())
         .collect();
 
-    // In-memory trees.
+    // The node-codec sweeps. Entry count is the dimension; two further
+    // points are structured variants at a fixed count: one whose entries
+    // carry extended attributes, and one that is the 128-entry set with a
+    // single entry's content key rewritten -- the shape an incremental
+    // update actually produces.
+    let mut entry_sets: Vec<EntrySet> = Vec::new();
+    let mut add_entries = |name: &str, content: &str, es: Vec<Entry>| {
+        let enc = fstree::encode_dir_leaf(&es).unwrap().bytes;
+        entry_sets.push(EntrySet {
+            name: name.to_string(),
+            content: content.to_string(),
+            entries: es,
+            enc,
+        });
+    };
+    for n in [8usize, 128, 1024] {
+        let es: Vec<Entry> = (0..n).map(|i| entry_for(i, seed + 40, None)).collect();
+        add_entries(&format!("entries-{n}"), "structured", es);
+    }
+    add_entries(
+        "entries-128-with-xattrs",
+        "structured",
+        entries_large.clone(),
+    );
+    let mut changed = entries_large.clone();
+    let mid = changed.len() / 2;
+    let h: [u8; 32] = random_bytes(seed + 41, 32).try_into().unwrap();
+    changed[mid].content_key = key_bytes(Key::new_from_hash(Type::Blob, 4242, h));
+    add_entries("entries-128-partial-change", "partial-change", changed);
+
+    let mut pair_sets: Vec<PairSet> = Vec::new();
+    for n in [8usize, 128, 1024] {
+        let pairs: Vec<DirPair> = (0..n)
+            .map(|i| {
+                let h: [u8; 32] = random_bytes(p.seed + 50 + i as u64, 32).try_into().unwrap();
+                let k = Key::new_from_hash(Type::DirLeaf, 4096 + i as u64, h);
+                DirPair {
+                    sep_name: format!("entry-{:08}", i * 7).into_bytes(),
+                    child_key: key_bytes(k),
+                }
+            })
+            .collect();
+        let enc = fstree::encode_dir_node(&pairs).unwrap().bytes;
+        pair_sets.push(PairSet {
+            name: format!("pairs-{n}"),
+            pairs,
+            enc,
+        });
+    }
+
+    let mut child_sets: Vec<ChildSet> = Vec::new();
+    for n in p.fan_outs.iter().copied() {
+        let ks: Vec<Key> = (0..n)
+            .map(|i| {
+                let h: [u8; 32] = random_bytes(p.seed + 60 + i as u64, 32).try_into().unwrap();
+                Key::new_from_hash(Type::Blob, 65536, h)
+            })
+            .collect();
+        let enc = fstree::encode_file_node(&ks).bytes;
+        child_sets.push(ChildSet {
+            name: format!("children-{n}"),
+            keys: ks,
+            enc,
+        });
+    }
+
+    // In-memory trees. Three dimensions are swept independently, each with
+    // the others held fixed, so a scaling plot reads one variable at a time:
+    // directory width, path depth and file-index fan-out.
     let mem = MemStore::new();
     let ic = ItemChunker::new(ingest::DEFAULT_ITEM_BITS);
-    let (wide_root, wide_names) = build_dir(&mem, ic, p.synthetic_wide, seed + 70);
-    let (shallow_root, _) = build_dir(&mem, ic, 16, seed + 71);
 
-    let mut child = shallow_root;
-    let mut comps: Vec<String> = Vec::new();
-    for d in (0..p.tree_depth).rev() {
-        let mut db = DirBuilder::new(ic);
-        let name = format!("level{d:03}");
-        let mut emit = |o: Object| mem.put(o);
-        // Entries must be added in bytewise name order: "entry-..." sorts
-        // before "level...".
-        db.add_entry(&mut emit, stored_entry(&mem, d, seed + 72))
-            .unwrap();
-        db.add_entry(
-            &mut emit,
-            Entry {
-                name: name.clone().into_bytes(),
-                mode: MODE_DIR,
-                uid: 1000,
-                gid: 1000,
-                mtime: 1_700_000_000_000_000_000,
-                content_key: key_bytes(child),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        child = db.finish(&mut emit).unwrap();
-        comps.insert(0, name);
+    let mut dirs: Vec<MemDir> = Vec::new();
+    for (i, n) in p.tree_widths.iter().copied().enumerate() {
+        let before = mem.len();
+        let (root, names) = build_dir(&mem, ic, n, seed + 70 + (i as u64) * 131);
+        dirs.push(MemDir {
+            entries: n,
+            root,
+            names,
+            miss_name: b"entry-zzzzzzzz".to_vec(),
+            objects: (mem.len() - before) as i64,
+        });
     }
-    let deep_root = child;
-    let deep_path = comps.join("/");
+    let wide_root = dirs[dirs.len() - 1].root;
+    let wide_names = dirs[dirs.len() - 1].names.clone();
+    let shallow_root = dirs[0].root;
 
-    // One file built the way ingest builds files.
+    // Each chain is a stack of directories, each holding the next one plus a
+    // little noise, so resolution really descends every level.
+    let mut chains: Vec<MemChain> = Vec::new();
+    for (i, depth) in p.tree_depths.iter().copied().enumerate() {
+        let cseed = seed + 72 + (i as u64) * 211;
+        let mut child = dirs[0].root;
+        let mut comps: Vec<String> = Vec::new();
+        for d in (0..depth).rev() {
+            let mut db = DirBuilder::new(ic);
+            let name = format!("level{d:03}");
+            let mut emit = |o: Object| mem.put(o);
+            // Entries must be added in bytewise name order: "entry-..."
+            // sorts before "level...".
+            db.add_entry(&mut emit, stored_entry(&mem, d, cseed))
+                .unwrap();
+            db.add_entry(
+                &mut emit,
+                Entry {
+                    name: name.clone().into_bytes(),
+                    mode: MODE_DIR,
+                    uid: 1000,
+                    gid: 1000,
+                    mtime: 1_700_000_000_000_000_000,
+                    content_key: key_bytes(child),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            child = db.finish(&mut emit).unwrap();
+            comps.insert(0, name);
+        }
+        chains.push(MemChain {
+            depth,
+            root: child,
+            path: comps.join("/"),
+        });
+    }
+    let deepest = &chains[chains.len() - 1];
+    let (deep_root, deep_path, deep_depth) = (deepest.root, deepest.path.clone(), deepest.depth);
+
+    // The file-index fan-out sweep. Every index is built over the same
+    // synthetic child keys, so the only thing that changes is how many.
+    let mut file_indexes: Vec<MemFileIndex> = Vec::new();
+    for (i, n) in p.fan_outs.iter().copied().enumerate() {
+        let ks: Vec<Key> = (0..n)
+            .map(|j| {
+                let h: [u8; 32] = random_bytes(seed + 60 + (i as u64) * 7 + j as u64, 32)
+                    .try_into()
+                    .unwrap();
+                Key::new_from_hash(Type::Blob, 65536, h)
+            })
+            .collect();
+        let mut fb = IndexBuilder::new_file(ic);
+        let root = {
+            let mut emit = |o: Object| mem.put(o);
+            for k in &ks {
+                fb.add_child(&mut emit, *k, &[]).unwrap();
+            }
+            fb.finish(&mut emit).unwrap()
+        };
+        file_indexes.push(MemFileIndex {
+            children: n,
+            root,
+            keys: ks,
+        });
+    }
+
+    // One file built the way ingest builds files: content-defined chunks
+    // under FileNode index levels. The chunk count is recorded, so the
+    // per-chunk denominator is exact rather than assumed.
     let mut fb = IndexBuilder::new_file(ic);
+    let mut nblobs: i64 = 0;
     {
         let mut emit = |o: Object| mem.put(o);
         chunkers::split_bytes(&corpus_text[..], None, |chunk| {
             let o = fstree::encode_blob(&chunk);
             let k = o.key;
             emit(o)?;
+            nblobs += 1;
             fb.add_child(&mut emit, k, &[])
                 .map_err(|e| MemMissing(Key::new(Type::Blob, 0, e.to_string().as_bytes())))
         })
@@ -140,6 +241,7 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
         fb.finish(&mut emit).unwrap()
     };
     let file_bytes = corpus_text.len() as i64;
+    let file_chunks = nblobs;
 
     // A copy of the shallow tree with one leaf missing.
     let incomplete_store = mem.snapshot();
@@ -162,31 +264,34 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
     write_ignore_fixture(&ignore_dir);
     stamp_tree(&ignore_dir).unwrap();
 
-    // Pack fixtures.
-    let n = (p.batch_ops / 4).max(64);
-    let mut pack_objects = Vec::with_capacity(n);
-    for i in 0..n {
-        let s = seed + 9000 + i as u64;
-        let b = match i % 4 {
-            0 => random_bytes(s, 512),
-            1 => compressible_bytes(s, 4096),
-            2 => random_bytes(s, 64 << 10),
-            _ => compressible_bytes(s, 64 << 10),
-        };
-        pack_objects.push(fstree::encode_blob(&b));
-    }
-    let mut wire = Vec::new();
-    {
-        let mut w = amberpack::Writer::new(&mut wire);
-        for o in &pack_objects {
-            w.add(o.key, &o.bytes).unwrap();
+    // Exact rate denominators, taken here -- before anything is timed --
+    // with the core's own walk. A filtered scan, an unfiltered scan and the
+    // successor tree cover different files and different bytes; using one
+    // number for all three would misreport every rate but one.
+    let scan_counts = |root: &Path, ignore_rules: bool| -> TreeCounts {
+        let (files, bytes) = ingest::scan(root, ignore_rules, 1).unwrap();
+        TreeCounts {
+            files: files as i64,
+            bytes: bytes as i64,
         }
-        w.finish().unwrap();
-    }
+    };
+    let v1_included = scan_counts(&tree_v1, false);
+    let v1_unfiltered = scan_counts(&tree_v1, true);
+    let v2_included = scan_counts(&tree_v2, false);
+    // The listing a restored tree has to reproduce, derived from the
+    // fixture's own ignore rules rather than from either core.
+    let v1_included_manifest = manifest_lines(&tree_v1, Some(&fixture_included)).unwrap();
+
+    // Pack fixtures: the object population both cores encode, this core's
+    // own encoding of it, and every producer's pack read from the shared
+    // wire directory.
+    let pack_objects = pack_object_population(p);
+    let wire = encode_wire_pack(&pack_objects);
     let wire_records: Vec<Vec<u8>> = pack_objects
         .iter()
         .map(|o| amberpack::encode_record(o.key, &o.bytes).unwrap())
         .collect();
+    let wire_inputs = load_wire_packs(wire_dir);
 
     // Store templates.
     let store_template = scratch.join("store-template");
@@ -271,6 +376,7 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
 
     // Inbox packs.
     let inbox_objs = store_objects(p, p.inbox_packs * 32, 30000);
+    let inbox_logical_bytes: i64 = inbox_objs.iter().map(|o| o.bytes.len() as i64).sum();
     let mut inbox_packs = Vec::with_capacity(p.inbox_packs);
     let mut inbox_roots = Vec::with_capacity(p.inbox_packs);
     for i in 0..p.inbox_packs {
@@ -388,6 +494,7 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
     Fixtures {
         corpus_random,
         corpus_text,
+        payloads,
         tiny,
         small,
         text,
@@ -400,6 +507,9 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
         xattrs_large,
         xattrs_small_enc,
         xattrs_large_enc,
+        entry_sets,
+        pair_sets,
+        child_sets,
         entries_small,
         entries_large,
         pairs_small,
@@ -414,14 +524,19 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
         enc_file_node_large,
         item_encodings,
         mem,
+        dirs,
+        chains,
+        file_indexes,
         wide_root,
         wide_names,
         miss_name: b"entry-zzzzzzzz".to_vec(),
         deep_root,
         deep_path,
+        deep_depth,
         shallow_root,
         file_root,
         file_bytes,
+        file_chunks,
         incomplete_root,
         incomplete_store,
         tree_v1,
@@ -429,10 +544,15 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
         ingest_template,
         tree_bytes,
         tree_files,
+        v1_included,
+        v1_unfiltered,
+        v2_included,
+        v1_included_manifest,
         ignore_dir,
         pack_objects,
         wire_pack: wire,
         wire_records,
+        wire: wire_inputs,
         store_template,
         store_keys,
         store_miss_keys,
@@ -444,6 +564,7 @@ pub fn build_fixtures(scratch: &Path, p: &Profile, xattrs: bool) -> Fixtures {
         gc_live_root,
         inbox_packs,
         inbox_roots,
+        inbox_logical_bytes,
         ref_record,
         ref_record_enc,
         ref_batch,
@@ -776,4 +897,99 @@ fn write_ignore_fixture(root: &Path) {
             .unwrap();
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The shared wire packs
+// ---------------------------------------------------------------------------
+
+/// The producing cores whose packs every driver reads, in a fixed order, so
+/// the two documents carry the same workloads in the same sequence. Mirrors
+/// `wireProducers` in `../go/fixtures_build.go`.
+pub const WIRE_PRODUCERS: &[&str] = &["go", "rust"];
+
+/// The name this core writes under.
+pub const WIRE_PRODUCER: &str = "rust";
+
+/// The object population both cores encode into a wire pack: a mix of tiny
+/// and large, compressible and random payloads, from the profile's seed
+/// alone. It is a pure function of the profile, so the `--emit-wire` pass
+/// does not have to build any other fixture.
+pub fn pack_object_population(p: &Profile) -> Vec<Object> {
+    let n = (p.batch_ops / 4).max(64);
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let s = p.seed + 9000 + i as u64;
+        let b = match i % 4 {
+            0 => random_bytes(s, 512),
+            1 => compressible_bytes(s, 4096),
+            2 => random_bytes(s, 64 << 10),
+            _ => compressible_bytes(s, 64 << 10),
+        };
+        out.push(fstree::encode_blob(&b));
+    }
+    out
+}
+
+/// Writes the population as one wire pack with this core's encoder.
+pub fn encode_wire_pack(objs: &[Object]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    {
+        let mut w = amberpack::Writer::new(&mut buf);
+        for o in objs {
+            w.add(o.key, &o.bytes).unwrap();
+        }
+        w.finish().unwrap();
+    }
+    buf
+}
+
+/// The production pass: writes this core's encoding of the shared object
+/// population into the wire directory, where the measurement pass of *both*
+/// drivers will read it. Nothing is measured here.
+pub fn emit_wire_pack(p: &Profile, dir: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dir)?;
+    let objs = pack_object_population(p);
+    let pack = encode_wire_pack(&objs);
+    let path = dir.join(format!("{WIRE_PRODUCER}.pack"));
+    fs::write(&path, &pack)?;
+    println!(
+        "{WIRE_PRODUCER}: wrote {} ({} objects, {} bytes, sha256 {})",
+        path.display(),
+        objs.len(),
+        pack.len(),
+        crate::sha256::hex(&pack)
+    );
+    Ok(())
+}
+
+/// Reads every producer's pack out of the shared wire directory and splits
+/// it into its raw records. Both drivers run this over the same files, so
+/// `amberpack.reader_all/producer-rust` in the Go document and in the Rust
+/// document are the same bytes, byte for byte.
+fn load_wire_packs(dir: &Path) -> Vec<WirePack> {
+    let mut out = Vec::new();
+    for producer in WIRE_PRODUCERS {
+        let path = dir.join(format!("{producer}.pack"));
+        let data = fs::read(&path).unwrap_or_else(|e| {
+            panic!(
+                "wire pack {}: {e} (run --emit-wire for both cores first)",
+                path.display()
+            )
+        });
+        let mut records = Vec::new();
+        let r = amberpack::Reader::new(&data[..]);
+        for rec in r.records() {
+            records.push(rec.unwrap().bytes.to_vec());
+        }
+        out.push(WirePack {
+            producer: producer.to_string(),
+            sha256: crate::sha256::hex(&data),
+            bytes: data.len() as i64,
+            objects: records.len(),
+            data,
+            records,
+        });
+    }
+    out
 }

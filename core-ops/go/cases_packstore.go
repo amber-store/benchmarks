@@ -47,7 +47,8 @@ func packstoreCases(e *Env) []Case {
 	// --- open ---------------------------------------------------------
 	out = append(out,
 		Case{
-			Group: "packstore", Op: "packstore.open", Workload: "empty", Threads: 1, Ops: 1, PerRep: true,
+			Group: "packstore", Op: "packstore.open", Workload: "empty", Threads: 1, Ops: 1,
+			Dims: Dims{Objects: 0, Items: 1, Content: "structured"}, PerRep: true,
 			Setup: func(en *Env) any { return &openState{dir: workDir(en, "ps-open-empty")} },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*openState)
@@ -56,7 +57,11 @@ func packstoreCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return 1
+				segs, err := st.st.Segments()
+				if err != nil {
+					panic(err)
+				}
+				return foldI64(newFold(), int64(len(segs)))
 			},
 			Free: func(_ *Env, s any) {
 				st := s.(*openState)
@@ -67,7 +72,8 @@ func packstoreCases(e *Env) []Case {
 			},
 		},
 		Case{
-			Group: "packstore", Op: "packstore.open", Workload: "populated-reopen", Threads: 1, Ops: 1, PerRep: true,
+			Group: "packstore", Op: "packstore.open", Workload: "populated-reopen", Threads: 1, Ops: 1,
+			Dims: Dims{Objects: int64(len(fx.StoreKeys)), Items: 1, Content: "structured"}, PerRep: true,
 			Setup: func(en *Env) any {
 				return &openState{dir: copiedDir(en, en.fx.StoreTemplate, "ps-open-full")}
 			},
@@ -82,7 +88,11 @@ func packstoreCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return uint64(len(segs))
+				acc := foldI64(newFold(), int64(len(segs)))
+				for _, sg := range segs {
+					acc = foldU64(acc, sg.ID)
+				}
+				return acc
 			},
 			Free: func(_ *Env, s any) {
 				st := s.(*openState)
@@ -93,7 +103,8 @@ func packstoreCases(e *Env) []Case {
 			},
 		},
 		Case{
-			Group: "packstore", Op: "packstore.close", Workload: "populated", Threads: 1, Ops: 1, PerRep: true,
+			Group: "packstore", Op: "packstore.close", Workload: "populated", Threads: 1, Ops: 1,
+			Dims: Dims{Objects: int64(len(fx.StoreKeys)), Items: 1, Content: "structured"}, PerRep: true,
 			Setup: func(en *Env) any {
 				dir := copiedDir(en, en.fx.StoreTemplate, "ps-close")
 				st := mustV(packstore.Open(dir, packstore.WithSegmentSize(en.Profile.SegmentBytes)))
@@ -101,92 +112,98 @@ func packstoreCases(e *Env) []Case {
 			},
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*openState)
-				if err := st.st.Close(); err != nil {
+				err := st.st.Close()
+				if err != nil {
 					panic(err)
 				}
 				st.st = nil
-				return 1
+				return foldBool(newFold(), true)
 			},
 			Free: func(_ *Env, s any) { _ = os.RemoveAll(s.(*openState).dir) },
 		},
 	)
 
 	// --- reads --------------------------------------------------------
+	// Every read case runs against the same long-lived open copy of the
+	// store fixture, so the measured interval is the lookup and not an
+	// mmap. `objects` is the store's object count; `items` is how many
+	// calls one measured interval makes.
+	readDims := func(items int) Dims {
+		return Dims{Items: int64(items), Objects: int64(len(fx.StoreKeys)), Content: "structured"}
+	}
 	read := func(op, workload string, ops int, bytes int64, run func(*Env, *packstore.Store) uint64) Case {
 		return Case{
 			Group: "packstore", Op: op, Workload: workload, Threads: 1, Ops: ops, Bytes: bytes,
+			Dims:  readDims(ops),
 			Setup: func(en *Env) any { return en.fx.RO.st },
 			Run:   func(en *Env, s any) uint64 { return run(en, s.(*packstore.Store)) },
 		}
 	}
 	out = append(out,
 		read("packstore.get", "hit", lookups, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for _, k := range hitKeys {
 				b, err := st.Get(k)
 				if err != nil {
 					panic(err)
 				}
-				acc += uint64(len(b))
+				// The returned buffer is consumed at its ends: a Get that
+				// handed back an empty or uninitialised slice could not
+				// reproduce this number.
+				acc = sinkBytes(acc, b)
 			}
 			return acc
 		}),
 		read("packstore.get", "miss", lookups, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for _, k := range missKeys {
-				if _, err := st.Get(k); errors.Is(err, packstore.ErrNotFound) {
-					acc++
-				}
+				_, err := st.Get(k)
+				acc = foldBool(acc, errors.Is(err, packstore.ErrNotFound))
 			}
 			return acc
 		}),
 		read("packstore.get_record", "hit", lookups, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for _, k := range hitKeys {
 				b, err := st.GetRecord(k)
 				if err != nil {
 					panic(err)
 				}
-				acc += uint64(len(b))
+				acc = sinkBytes(acc, b)
 			}
 			return acc
 		}),
 		read("packstore.has", "hit", lookups, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for _, k := range hitKeys {
 				ok, err := st.Has(k)
 				if err != nil {
 					panic(err)
 				}
-				if ok {
-					acc++
-				}
+				acc = foldBool(acc, ok)
 			}
 			return acc
 		}),
 		read("packstore.has", "miss", lookups, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for _, k := range missKeys {
 				ok, err := st.Has(k)
 				if err != nil {
 					panic(err)
 				}
-				if !ok {
-					acc++
-				}
+				acc = foldBool(acc, ok)
 			}
 			return acc
 		}),
 		read("packstore.stored_size", "hit", lookups, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for _, k := range hitKeys {
 				n, ok, err := st.StoredSize(k)
 				if err != nil {
 					panic(err)
 				}
-				if ok {
-					acc += n
-				}
+				acc = foldBool(acc, ok)
+				acc = foldU64(acc, n)
 			}
 			return acc
 		}),
@@ -195,37 +212,68 @@ func packstoreCases(e *Env) []Case {
 			if err != nil {
 				panic(err)
 			}
-			return uint64(len(out))
+			acc := foldU64(newFold(), uint64(len(out)))
+			// The whole returned set, in order: the answer is which keys
+			// are missing, not how many.
+			for _, k := range out {
+				acc = foldKey(acc, k)
+			}
+			return acc
 		}),
 		read("packstore.sort_by_location", "scattered", len(mixed), 0, func(_ *Env, st *packstore.Store) uint64 {
 			ks := make([]key.Key, len(mixed))
 			copy(ks, mixed)
 			st.SortByLocation(ks)
-			return uint64(ks[0][0])
+			// The permutation is the output, so the whole reordered slice
+			// is folded rather than its first byte.
+			acc := newFold()
+			for _, k := range ks {
+				acc = foldKey(acc, k)
+			}
+			return acc
 		}),
 		read("packstore.segments", "list", 64, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for i := 0; i < 64; i++ {
 				segs, err := st.Segments()
 				if err != nil {
 					panic(err)
 				}
-				acc += uint64(len(segs))
+				acc = foldU64(acc, uint64(len(segs)))
+				for _, sg := range segs {
+					acc = foldU64(acc, sg.ID)
+				}
 			}
 			return acc
 		}),
-		read("packstore.scan_index", "one-segment", 1, 0, func(en *Env, st *packstore.Store) uint64 {
-			var acc uint64
-			err := st.ScanIndex(en.fx.ROSegID, func(k key.Key, off uint64, slen uint32) {
-				acc += uint64(slen) + uint64(k[0])
-			})
+		// Every sealed segment's index, not just the first: which segment a
+		// given object lands in follows the compressed record sizes, which
+		// the two cores' encoders do not produce identically, so a
+		// single-segment walk would cover a different number of records on
+		// each side. Over the whole store the count is the object count, in
+		// both cores.
+		read("packstore.scan_index", "all-segments", len(fx.StoreKeys), 0, func(en *Env, st *packstore.Store) uint64 {
+			segs, err := st.Segments()
 			if err != nil {
 				panic(err)
 			}
-			return acc
+			acc := newFold()
+			var n uint64
+			for _, sg := range segs {
+				if err := st.ScanIndex(sg.ID, func(k key.Key, off uint64, slen uint32) {
+					// Offsets and segment ids are per-core facts (the
+					// records are packed differently), so the fold covers
+					// the key set and the record count, which are not.
+					acc = foldKey(acc, k)
+					n++
+				}); err != nil {
+					panic(err)
+				}
+			}
+			return foldU64(acc, n)
 		}),
 		read("packstore.record", "by-location", minInt(lookups, 4096), 0, func(en *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			locs := en.fx.ROLocs
 			n := minInt(lookups, 4096)
 			for i := 0; i < n; i++ {
@@ -234,59 +282,57 @@ func packstoreCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				acc += uint64(len(b))
+				acc = sinkBytes(acc, b)
 			}
 			return acc
 		}),
 		read("packstore.has_outside", "sealed-segment", lookups, 0, func(en *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for _, k := range hitKeys {
 				ok, err := st.HasOutside(en.fx.ROSegID, k)
 				if err != nil {
 					panic(err)
 				}
-				if ok {
-					acc++
-				}
+				acc = foldBool(acc, ok)
 			}
 			return acc
 		}),
 		read("packstore.oldest_inflight_write", "idle", 4096, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for i := 0; i < 4096; i++ {
-				if _, ok := st.OldestInflightWrite(); ok {
-					acc++
-				}
+				t, ok := st.OldestInflightWrite()
+				acc = foldBool(acc, ok)
+				acc = foldI64(acc, t.UnixNano())
 			}
 			return acc
 		}),
 		read("packstore.new_mark_set", "snapshot", 16, 0, func(_ *Env, st *packstore.Store) uint64 {
-			var acc uint64
+			acc := newFold()
 			for i := 0; i < 16; i++ {
-				acc += uint64(st.NewMarkSet().Marked() + 1)
+				ms := st.NewMarkSet()
+				acc = foldI64(acc, int64(ms.Marked()))
+				blackBox(ms)
 			}
 			return acc
 		}),
 		read("packstore.mark_set_mark", "all-keys", len(fx.StoreKeys), 0, func(en *Env, st *packstore.Store) uint64 {
 			ms := st.NewMarkSet()
-			var acc uint64
+			acc := newFold()
 			for _, k := range en.fx.StoreKeys {
-				if newly, present := ms.Mark(k); newly && present {
-					acc++
-				}
+				newly, present := ms.Mark(k)
+				acc = foldBool(acc, newly)
+				acc = foldBool(acc, present)
 			}
-			return acc + uint64(ms.Marked())
+			return foldI64(acc, int64(ms.Marked()))
 		}),
 		read("packstore.mark_set_contains", "all-keys", len(fx.StoreKeys), 0, func(en *Env, st *packstore.Store) uint64 {
 			ms := st.NewMarkSet()
 			for _, k := range en.fx.StoreKeys {
 				ms.Mark(k)
 			}
-			var acc uint64
+			acc := newFold()
 			for _, k := range en.fx.StoreKeys {
-				if ms.Contains(k) {
-					acc++
-				}
+				acc = foldBool(acc, ms.Contains(k))
 			}
 			return acc
 		}),
@@ -296,113 +342,157 @@ func packstoreCases(e *Env) []Case {
 			if err != nil {
 				panic(err)
 			}
-			var acc uint64
+			acc := foldU64(newFold(), uint64(len(ls)))
 			for _, l := range ls {
-				acc += uint64(l.LiveKeys + l.DeadKeys)
+				acc = foldI64(acc, int64(l.LiveKeys))
+				acc = foldI64(acc, int64(l.DeadKeys))
 			}
 			return acc
 		}),
-		read("packstore.verify", "full-scrub", 1, 0, func(_ *Env, st *packstore.Store) uint64 {
-			if err := st.Verify(context.Background()); err != nil {
-				panic(err)
-			}
-			return 1
+		read("packstore.verify", "full-scrub", len(fx.StoreKeys), 0, func(_ *Env, st *packstore.Store) uint64 {
+			err := st.Verify(context.Background())
+			return foldBool(newFold(), err == nil)
 		}),
+		// Begin, observe the whole key set, abort. The observable result of
+		// the capture is what a following Compact retains, which the
+		// packstore/barrier-* checks assert; here the cost of capturing is
+		// what is measured, and the answer folded is whether the store
+		// really was capturing at the time.
 		read("packstore.barrier", "begin+observe+abort", len(fx.StoreKeys), 0,
 			func(en *Env, st *packstore.Store) uint64 {
 				st.BeginBarrier()
 				st.ObserveKeys(en.fx.StoreKeys)
+				_, inflight := st.OldestInflightWrite()
 				st.AbortBarrier()
-				return uint64(len(en.fx.StoreKeys))
+				return foldBool(foldI64(newFold(), int64(len(en.fx.StoreKeys))), inflight)
 			}),
 	)
 
 	// --- writes -------------------------------------------------------
 	writeObjs := storeObjects(p, minInt(p.StoreObjects, 8000), 50000)
-	tiny := storeObjectsOfSize(p, minInt(p.BatchOps, 4000), 128, 60000)
-	large := storeObjectsOfSize(p, maxInt(minInt(p.BatchOps/16, 256), 16), 256<<10, 61000)
 
-	putCase := func(workload string, objs []fstree.Object, sync bool) Case {
-		return Case{
-			Group: "packstore", Op: "packstore.put", Workload: workload, Threads: 1,
-			Ops: len(objs), Bytes: packBytes(objs), PerRep: true,
-			Setup: func(en *Env) any {
-				if sync {
-					return freshStoreSync(en, "ps-put")
-				}
-				return freshStore(en, "ps-put")
-			},
-			Run: func(_ *Env, s any) uint64 {
-				st := s.(*storeHandle).st
-				var acc uint64
+	// packstore.Put is swept over the object-size and content grid: the
+	// size decides how many segments a batch fills, and the content decides
+	// whether the record compresses and whether the store sees the object
+	// at all. Each point is capped to a bounded number of stored bytes, so
+	// the sweep costs about the same at every size.
+	putSets := storePayloadSets(fx, p)
+	for _, ps := range putSets {
+		ps := ps
+		objs := blobsOf(ps)
+		out = append(out, Case{
+			Group: "packstore", Op: "packstore.put", Workload: ps.Name + "/sync-off", Threads: 1,
+			Ops: len(objs), Bytes: packBytes(objs), BytesKind: BytesPayload,
+			Dims:   ps.dims(),
+			PerRep: true,
+			Setup:  func(en *Env) any { return freshStore(en, "ps-put") },
+			Run: func(_ *Env, st any) uint64 {
+				store := st.(*storeHandle).st
+				acc := newFold()
 				for _, o := range objs {
-					if err := st.Put(o.Key, o.Bytes); err != nil {
+					err := store.Put(o.Key, o.Bytes)
+					if err != nil {
 						panic(err)
 					}
-					acc += uint64(o.Key[0])
+					// Put's only result is whether it succeeded; the object
+					// it stored is asserted by the packstore/put-* checks,
+					// outside every measured interval.
+					acc = foldBool(acc, true)
 				}
 				return acc
 			},
-			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
-		}
+			Free: func(_ *Env, st any) { st.(*storeHandle).close() },
+		})
 	}
+	// The same objects written a second time into a store that already
+	// holds them: the pure dedup path, at one representative size.
+	dupSet := payloadNamed(putSets, "4KiB-random")
+	dupObjs := blobsOf(dupSet)
 	out = append(out,
-		putCase("tiny-128B/sync-off", tiny, false),
-		putCase("tiny-128B/sync-on", tiny, true),
-		putCase("large-256KiB/sync-off", large, false),
 		Case{
-			Group: "packstore", Op: "packstore.put", Workload: "duplicate/sync-off", Threads: 1,
-			Ops: len(tiny), Bytes: packBytes(tiny), PerRep: true,
+			Group: "packstore", Op: "packstore.put", Workload: "4KiB-random/already-present", Threads: 1,
+			Ops: len(dupObjs), Bytes: packBytes(dupObjs), BytesKind: BytesPayload,
+			Dims: dupSet.dims(), PerRep: true,
 			Setup: func(en *Env) any {
 				h := freshStore(en, "ps-put-dup")
-				for _, o := range tiny {
+				for _, o := range dupObjs {
 					must(h.st.Put(o.Key, o.Bytes))
 				}
 				return h
 			},
-			Run: func(_ *Env, s any) uint64 {
-				st := s.(*storeHandle).st
-				var acc uint64
-				for _, o := range tiny {
-					if err := st.Put(o.Key, o.Bytes); err != nil {
+			Run: func(_ *Env, st any) uint64 {
+				store := st.(*storeHandle).st
+				acc := newFold()
+				for _, o := range dupObjs {
+					if err := store.Put(o.Key, o.Bytes); err != nil {
 						panic(err)
 					}
-					acc++
+					acc = foldBool(acc, true)
 				}
 				return acc
 			},
-			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
+			Free: func(_ *Env, st any) { st.(*storeHandle).close() },
+		},
+		// The durability dimension, at the same representative size: every
+		// append is fsynced rather than batched.
+		Case{
+			Group: "packstore", Op: "packstore.put", Workload: "4KiB-random/sync-on", Threads: 1,
+			Ops: len(dupObjs), Bytes: packBytes(dupObjs), BytesKind: BytesPayload,
+			Dims: dupSet.dims(), PerRep: true,
+			Setup: func(en *Env) any { return freshStoreSync(en, "ps-put-sync") },
+			Run: func(_ *Env, st any) uint64 {
+				store := st.(*storeHandle).st
+				acc := newFold()
+				for _, o := range dupObjs {
+					if err := store.Put(o.Key, o.Bytes); err != nil {
+						panic(err)
+					}
+					acc = foldBool(acc, true)
+				}
+				return acc
+			},
+			Free: func(_ *Env, st any) { st.(*storeHandle).close() },
 		},
 		Case{
 			Group: "packstore", Op: "packstore.write_batch", Workload: "mixed-objects", Threads: 1,
-			Ops: len(writeObjs), Bytes: packBytes(writeObjs), PerRep: true,
-			Setup: func(en *Env) any { return freshStore(en, "ps-batch") },
-			Run: func(_ *Env, s any) uint64 {
-				st := s.(*storeHandle).st
-				if err := st.WriteBatch(objectSeq(writeObjs)); err != nil {
+			Ops: len(writeObjs), Bytes: packBytes(writeObjs), BytesKind: BytesPayload,
+			Dims:   Dims{Items: int64(len(writeObjs)), Objects: int64(len(writeObjs)), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return freshStore(en, "ps-batch") },
+			Run: func(_ *Env, st any) uint64 {
+				store := st.(*storeHandle).st
+				if err := store.WriteBatch(objectSeq(writeObjs)); err != nil {
 					panic(err)
 				}
-				return uint64(len(writeObjs))
+				segs, err := store.Segments()
+				if err != nil {
+					panic(err)
+				}
+				return foldI64(newFold(), int64(len(segs)))
 			},
-			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
+			Free: func(_ *Env, st any) { st.(*storeHandle).close() },
 		},
 		Case{
 			Group: "packstore", Op: "packstore.append_record", Workload: "pre-encoded+sync", Threads: 1,
-			Ops: len(fx.WireRecords), PerRep: true,
-			Setup: func(en *Env) any { return freshStore(en, "ps-append") },
-			Run: func(en *Env, s any) uint64 {
-				st := s.(*storeHandle).st
+			Ops: len(fx.WireRecords), Bytes: packBytes(fx.PackObjects), BytesKind: BytesPayload,
+			Dims:   Dims{Items: int64(len(fx.WireRecords)), Objects: int64(len(fx.PackObjects)), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return freshStore(en, "ps-append") },
+			Run: func(en *Env, st any) uint64 {
+				store := st.(*storeHandle).st
+				acc := newFold()
 				for i, rec := range en.fx.WireRecords {
-					if err := st.AppendRecord(en.fx.PackObjects[i].Key, rec); err != nil {
+					if err := store.AppendRecord(en.fx.PackObjects[i].Key, rec); err != nil {
 						panic(err)
 					}
+					acc = foldBool(acc, true)
 				}
-				if err := st.Sync(); err != nil {
+				if err := store.Sync(); err != nil {
 					panic(err)
 				}
-				return uint64(len(en.fx.WireRecords))
+				return foldBool(acc, true)
 			},
-			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
+			Free: func(_ *Env, st any) { st.(*storeHandle).close() },
 		},
 	)
 	for _, writers := range []int{p.ThreadsSingle, p.ThreadsMulti} {
@@ -411,8 +501,12 @@ func packstoreCases(e *Env) []Case {
 			name := fmt.Sprintf("mixed-objects/writers-%d/verify-%v", writers, verify)
 			out = append(out, Case{
 				Group: "packstore", Op: "packstore.write_parallel", Workload: name, Threads: writers,
-				Ops: len(writeObjs), Bytes: packBytes(writeObjs), PerRep: true,
-				Setup: func(en *Env) any { return freshStore(en, "ps-parallel") },
+				Ops: len(writeObjs), Bytes: packBytes(writeObjs), BytesKind: BytesPayload,
+				Dims: Dims{Items: int64(len(writeObjs)), Objects: int64(len(writeObjs)),
+					Content: "structured"},
+				PerRep:        true,
+				CrossChecksum: true,
+				Setup:         func(en *Env) any { return freshStore(en, "ps-parallel") },
 				Run: func(_ *Env, s any) uint64 {
 					st := s.(*storeHandle).st
 					stats, err := st.WriteParallel(objectSeq(writeObjs),
@@ -420,7 +514,7 @@ func packstoreCases(e *Env) []Case {
 					if err != nil {
 						panic(err)
 					}
-					return uint64(stats.Stored)
+					return foldI64(foldI64(newFold(), int64(stats.Stored)), int64(stats.Deduped))
 				},
 				Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 			})
@@ -428,7 +522,10 @@ func packstoreCases(e *Env) []Case {
 	}
 	out = append(out, Case{
 		Group: "packstore", Op: "packstore.write_parallel", Workload: "duplicate-stream/writers-8", Threads: p.ThreadsMulti,
-		Ops: len(writeObjs), Bytes: packBytes(writeObjs), PerRep: true,
+		Ops: len(writeObjs), Bytes: packBytes(writeObjs), BytesKind: BytesPayload,
+		Dims: Dims{Items: int64(len(writeObjs)), Objects: int64(len(writeObjs)),
+			Content: "duplicate"},
+		PerRep: true, CrossChecksum: true,
 		Setup: func(en *Env) any {
 			h := freshStore(en, "ps-parallel-dup")
 			_, err := h.st.WriteParallel(objectSeq(writeObjs),
@@ -443,7 +540,7 @@ func packstoreCases(e *Env) []Case {
 			if err != nil {
 				panic(err)
 			}
-			return uint64(stats.Deduped)
+			return foldI64(foldI64(newFold(), int64(stats.Stored)), int64(stats.Deduped))
 		},
 		Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 	})
@@ -452,8 +549,10 @@ func packstoreCases(e *Env) []Case {
 	out = append(out,
 		Case{
 			Group: "packstore", Op: "packstore.compact", Workload: "90-percent-dead", Threads: 1,
-			Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return copiedStore(en, en.fx.GarbageTemplate, "ps-compact") },
+			Ops:    len(fx.StoreKeys),
+			Dims:   Dims{Objects: int64(len(fx.StoreKeys)), Items: int64(len(fx.GarbageLive)), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return copiedStore(en, en.fx.GarbageTemplate, "ps-compact") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*storeHandle).st
 				live := keySet(en.fx.GarbageLive)
@@ -462,14 +561,17 @@ func packstoreCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return uint64(stats.RecordsCopied) + stats.BytesFreed
+				return foldU64(foldI64(foldI64(newFold(),
+					int64(stats.RecordsCopied)), int64(stats.SegmentsScanned)), stats.BytesFreed)
 			},
 			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 		},
 		Case{
 			Group: "packstore", Op: "packstore.compact", Workload: "nothing-dead", Threads: 1,
-			Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return copiedStore(en, en.fx.GarbageTemplate, "ps-compact-live") },
+			Ops:    len(fx.StoreKeys),
+			Dims:   Dims{Objects: int64(len(fx.StoreKeys)), Items: int64(len(fx.StoreKeys)), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return copiedStore(en, en.fx.GarbageTemplate, "ps-compact-live") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*storeHandle).st
 				stats, err := st.Compact(func(key.Key) bool { return true },
@@ -477,14 +579,17 @@ func packstoreCases(e *Env) []Case {
 				if err != nil {
 					panic(err)
 				}
-				return uint64(stats.SegmentsScanned)
+				return foldU64(foldI64(foldI64(newFold(),
+					int64(stats.RecordsCopied)), int64(stats.SegmentsScanned)), stats.BytesFreed)
 			},
 			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 		},
 		Case{
 			Group: "packstore", Op: "packstore.remove", Workload: "one-sealed-segment", Threads: 1,
-			Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return copiedStore(en, en.fx.StoreTemplate, "ps-remove") },
+			Ops:    1,
+			Dims:   Dims{Objects: int64(len(fx.StoreKeys)), Items: 1, Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return copiedStore(en, en.fx.StoreTemplate, "ps-remove") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*storeHandle).st
 				segs, err := st.Segments()
@@ -494,20 +599,30 @@ func packstoreCases(e *Env) []Case {
 				if err := st.Remove(segs[0].ID); err != nil {
 					panic(err)
 				}
-				return segs[0].ID + 1
+				after, err := st.Segments()
+				if err != nil {
+					panic(err)
+				}
+				return foldI64(foldU64(newFold(), segs[0].ID), int64(len(after)))
 			},
 			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 		},
 		Case{
 			Group: "packstore", Op: "packstore.wipe", Workload: "populated", Threads: 1,
-			Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return copiedStore(en, en.fx.StoreTemplate, "ps-wipe") },
+			Ops:    1,
+			Dims:   Dims{Objects: int64(len(fx.StoreKeys)), Items: 1, Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return copiedStore(en, en.fx.StoreTemplate, "ps-wipe") },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*storeHandle).st
 				if err := st.Wipe(); err != nil {
 					panic(err)
 				}
-				return 1
+				segs, err := st.Segments()
+				if err != nil {
+					panic(err)
+				}
+				return foldI64(newFold(), int64(len(segs)))
 			},
 			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 		},
@@ -515,24 +630,50 @@ func packstoreCases(e *Env) []Case {
 		// key, so it runs on its own copy only.
 		Case{
 			Group: "packstore", Op: "packstore.put_verified", Workload: "already-intact", Threads: 1,
-			Ops: minInt(p.BatchOps/8, 256), PerRep: true,
-			Setup: func(en *Env) any { return copiedStore(en, en.fx.StoreTemplate, "ps-putverified") },
+			Ops:    minInt(p.BatchOps/8, 256),
+			Dims:   Dims{Items: int64(minInt(p.BatchOps/8, 256)), Objects: int64(len(fx.StoreKeys)), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return copiedStore(en, en.fx.StoreTemplate, "ps-putverified") },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*storeHandle).st
 				n := minInt(en.Profile.BatchOps/8, 256)
-				var acc uint64
+				acc := newFold()
 				for i := 0; i < n; i++ {
 					o := en.fx.PackObjects[i%len(en.fx.PackObjects)]
-					if err := st.PutVerified(o.Key, o.Bytes); err != nil {
+					err := st.PutVerified(o.Key, o.Bytes)
+					if err != nil {
 						panic(err)
 					}
-					acc++
+					acc = foldBool(acc, true)
 				}
 				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*storeHandle).close() },
 		},
 	)
+	return out
+}
+
+// storePayloadSets is the payload grid reduced to what a store write can
+// afford: every size class crossed with every content kind, each capped to a
+// bounded number of stored bytes so the whole sweep costs about the same as
+// one of the old cases did.
+func storePayloadSets(fx *Fixtures, p Profile) []payloadSet {
+	cap_ := p.PayloadTotal / 8
+	out := make([]payloadSet, 0, len(fx.Payloads))
+	for _, ps := range fx.Payloads {
+		out = append(out, ps.limit(cap_))
+	}
+	return out
+}
+
+// blobsOf encodes a payload set as store objects, outside every measured
+// interval.
+func blobsOf(ps payloadSet) []fstree.Object {
+	out := make([]fstree.Object, 0, len(ps.Items))
+	for _, b := range ps.Items {
+		out = append(out, mustV(fstree.EncodeBlob(b)))
+	}
 	return out
 }
 
@@ -704,10 +845,23 @@ func packstoreChecks(e *Env) {
 	beforeBytes := dirBytes(dir)
 	stats, err := cst.Compact(func(k key.Key) bool { return live[k] }, packstore.CompactOpts{MinDeadRatio: 0.5})
 	afterBytes := dirBytes(dir)
+	// Retention is a statement about content, not about presence: every
+	// object that was supposed to survive is read back and re-hashed, and
+	// the store is content-addressed, so a key that matches its own
+	// re-hash is a complete verification of the retained bytes.
 	retained := true
+	retainedDetail := ""
 	for _, k := range fx.GarbageLive {
-		if _, gerr := cst.Get(k); gerr != nil {
+		got, gerr := cst.Get(k)
+		if gerr != nil {
 			retained = false
+			retainedDetail = fmt.Sprintf("%s: %v", k, gerr)
+			break
+		}
+		rehash, herr := key.New(key.Blob, uint64(len(got)), got)
+		if herr != nil || rehash != k {
+			retained = false
+			retainedDetail = fmt.Sprintf("%s re-hashed to %s (%v)", k, rehash, herr)
 			break
 		}
 	}
@@ -719,9 +873,26 @@ func packstoreChecks(e *Env) {
 			}
 		}
 	}
-	e.want("packstore", "packstore.compact", "packstore/compact-retains-live",
-		err == nil && retained, fmt.Sprintf("a live object was lost by compaction (%v)", err),
+	e.want("packstore", "packstore.compact", "packstore/compact-retains-live-content",
+		err == nil && retained,
+		fmt.Sprintf("a live object did not survive compaction intact (%v): %s", err, retainedDetail),
 		fmt.Sprintf("live=%d", len(fx.GarbageLive)))
+	// And everything that was eligible really was reclaimed: no object the
+	// predicate called dead may still be readable from a compacted segment.
+	survivors := 0
+	for i, k := range fx.StoreKeys {
+		if i%10 == 0 {
+			continue
+		}
+		if ok, _ := cst.Has(k); ok {
+			survivors++
+		}
+	}
+	e.wantLocal("packstore", "packstore.compact", "packstore/compact-drops-dead",
+		dropped > 0 && dropped+survivors == len(fx.StoreKeys)-len(fx.GarbageLive),
+		fmt.Sprintf("%d dead objects dropped, %d still present, %d were dead",
+			dropped, survivors, len(fx.StoreKeys)-len(fx.GarbageLive)),
+		fmt.Sprintf("dropped=%d survivors=%d", dropped, survivors))
 	e.wantLocal("packstore", "packstore.compact", "packstore/compact-reclaims",
 		err == nil && stats.SegmentsCompacted > 0 && afterBytes < beforeBytes && dropped > 0,
 		fmt.Sprintf("compaction freed nothing: %d segments, %d -> %d bytes, %d objects dropped",
@@ -800,6 +971,104 @@ func packstoreChecks(e *Env) {
 		fmt.Sprintf("stored=%d deduped=%d", ws.Stored, ws.Deduped))
 	must(vst.Close())
 	must(os.RemoveAll(vdir))
+
+	// --- the write barrier -------------------------------------------
+	// BeginBarrier/ObserveKeys/AbortBarrier had no correctness evidence at
+	// all; a timing of a call that does nothing observable is not a
+	// measurement of anything. The observable contract is that keys seen
+	// during a capture are treated as live by the next Compact even when
+	// the liveness predicate calls them dead -- which is how an ingest may
+	// run concurrently with a mark -- and that an aborted capture protects
+	// nothing.
+	barrierCase := func(id string, abort bool, wantProtected bool) {
+		bdir := copiedDir(e, fx.GarbageTemplate, "check-barrier")
+		defer os.RemoveAll(bdir)
+		bst := mustV(packstore.Open(bdir,
+			packstore.WithSegmentSize(p.SegmentBytes), packstore.WithSync(false)))
+		defer bst.Close()
+		// Pick objects the predicate below calls dead, and observe them.
+		var observed []key.Key
+		for i, k := range fx.StoreKeys {
+			if i%10 != 0 && len(observed) < 32 {
+				observed = append(observed, k)
+			}
+		}
+		bst.BeginBarrier()
+		bst.ObserveKeys(observed)
+		if abort {
+			bst.AbortBarrier()
+		}
+		liveOnly := keySet(fx.GarbageLive)
+		_, cerr := bst.Compact(func(k key.Key) bool { return liveOnly[k] },
+			packstore.CompactOpts{MinDeadRatio: 0.5})
+		protected := 0
+		for _, k := range observed {
+			if ok, _ := bst.Has(k); ok {
+				protected++
+			}
+		}
+		got := protected == len(observed)
+		e.want("packstore", "packstore.barrier", id,
+			cerr == nil && got == wantProtected,
+			fmt.Sprintf("%d of %d observed keys survived the compaction (wanted all=%v): %v",
+				protected, len(observed), wantProtected, cerr),
+			fmt.Sprintf("observed=%d protected=%v", len(observed), got))
+	}
+	// A live capture protects everything it observed...
+	barrierCase("packstore/barrier-observed-keys-survive-compact", false, true)
+	// ...and an aborted one protects nothing.
+	barrierCase("packstore/barrier-abort-protects-nothing", true, false)
+
+	// --- append_record + sync ----------------------------------------
+	// The other operation with no check: re-appending already-encoded
+	// records. The contract is that the store afterwards holds exactly
+	// those objects, byte for byte, and that they are still there after
+	// the Sync the batch ends with and a reopen.
+	adir := workDir(e, "check-append")
+	defer os.RemoveAll(adir)
+	ast := mustV(packstore.Open(adir,
+		packstore.WithSegmentSize(p.SegmentBytes), packstore.WithSync(false)))
+	aerr := error(nil)
+	for i, rec := range fx.WireRecords {
+		if err := ast.AppendRecord(fx.PackObjects[i].Key, rec); err != nil {
+			aerr = err
+			break
+		}
+	}
+	if aerr == nil {
+		aerr = ast.Sync()
+	}
+	must(ast.Close())
+	// Reopened from disk, so the check covers the Sync and not just the
+	// in-memory state the appends left behind.
+	ast = mustV(packstore.Open(adir,
+		packstore.WithSegmentSize(p.SegmentBytes), packstore.WithSync(false)))
+	appendOK := aerr == nil
+	appendDetail := fmt.Sprintf("%v", aerr)
+	for _, o := range fx.PackObjects {
+		if !appendOK {
+			break
+		}
+		got, gerr := ast.Get(o.Key)
+		if gerr != nil || string(got) != string(o.Bytes) {
+			appendOK = false
+			appendDetail = fmt.Sprintf("%s: %v (%d vs %d bytes)", o.Key, gerr, len(got), len(o.Bytes))
+		}
+	}
+	e.want("packstore", "packstore.append_record", "packstore/append-record-roundtrip",
+		appendOK,
+		"an appended record did not read back as the object it encodes: "+appendDetail,
+		packContentDigest(fx.PackObjects))
+	// A nil record is rejected rather than stored as an empty object.
+	nilErr := ast.AppendRecord(fx.PackObjects[0].Key, nil)
+	e.want("packstore", "packstore.append_record", "packstore/append-record-rejects-nil",
+		errors.Is(nilErr, packstore.ErrCorrupt),
+		fmt.Sprintf("a nil record must wrap ErrCorrupt, got %v", nilErr), "ErrCorrupt")
+	// And the scrub passes over what the appends wrote.
+	e.want("packstore", "packstore.append_record", "packstore/append-record-scrubs-clean",
+		ast.Verify(context.Background()) == nil,
+		"the store did not scrub clean after a batch of appended records", "clean")
+	must(ast.Close())
 }
 
 // findRecordOffset locates one key's record inside a sealed segment.

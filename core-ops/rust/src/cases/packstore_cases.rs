@@ -11,9 +11,12 @@ use amber_store_core::key::{Key, Type};
 use amber_store_core::packstore::{self, CompactOpts, WriteOpts};
 
 use crate::env::Env;
-use crate::fixtures::{RecordLoc, digest_strings};
+use crate::fixtures::{
+    PayloadSet, RecordLoc, digest_strings, fold_bool, fold_i64, fold_key, fold_u64, new_fold,
+    payload_named, sink_bytes,
+};
 use crate::fixtures_build::{object_seq, store_objects, store_objects_of_size, store_options};
-use crate::harness::{Case, Recorder, State};
+use crate::harness::{Case, Dims, Recorder, State, bytes_kind};
 use crate::stores::{
     StoreHandle, copied_dir, copied_store, dir_bytes, fresh_store, fresh_store_sync, open_store,
     work_dir,
@@ -36,6 +39,14 @@ fn free_open_state(_: &Env, s: State) {
 
 fn free_store_handle(_: &Env, s: State) {
     s.downcast::<StoreHandle>().unwrap().close();
+}
+
+/// Encodes a payload set as store objects, outside every measured interval.
+fn blobs_of(ps: &PayloadSet) -> Vec<Object> {
+    ps.items
+        .iter()
+        .map(|b| amber_store_core::fstree::encode_blob(b))
+        .collect()
 }
 
 fn key_set(ks: &[Key]) -> HashSet<Key> {
@@ -82,10 +93,17 @@ pub fn cases(env: &Env) -> Vec<Case> {
                 let st = s.downcast_mut::<OpenState>().unwrap();
                 let store =
                     packstore::Store::open_with(&st.dir, store_options(&env.profile)).unwrap();
+                let n = store.segments().unwrap().len() as i64;
                 st.st = Some(Arc::new(store));
-                1
+                fold_i64(new_fold(), n)
             }),
         )
+        .dims(Dims {
+            objects: 0,
+            items: 1,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_open_state)),
     );
     out.push(
@@ -105,11 +123,21 @@ pub fn cases(env: &Env) -> Vec<Case> {
                 let st = s.downcast_mut::<OpenState>().unwrap();
                 let store =
                     packstore::Store::open_with(&st.dir, store_options(&env.profile)).unwrap();
-                let n = store.segments().unwrap().len() as u64;
+                let segs = store.segments().unwrap();
+                let mut acc = fold_i64(new_fold(), segs.len() as i64);
+                for sg in &segs {
+                    acc = fold_u64(acc, sg.id);
+                }
                 st.st = Some(Arc::new(store));
-                n
+                acc
             }),
         )
+        .dims(Dims {
+            objects: fx.store_keys.len() as i64,
+            items: 1,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_open_state)),
     );
     out.push(
@@ -130,24 +158,43 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|_, s| {
                 let st = s.downcast_mut::<OpenState>().unwrap();
                 st.st.take().unwrap().close().unwrap();
-                1
+                fold_bool(new_fold(), true)
             }),
         )
+        .dims(Dims {
+            objects: fx.store_keys.len() as i64,
+            items: 1,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_open_state)),
     );
 
     // --- reads --------------------------------------------------------
+    // Every read case runs against the same long-lived open copy of the
+    // store fixture, so the measured interval is the lookup and not an mmap.
+    // `objects` is the store's object count; `items` is how many calls one
+    // measured interval makes.
+    let store_objects_n = fx.store_keys.len() as i64;
     macro_rules! read_case {
         ($op:expr, $wl:expr, $ops:expr, $body:expr) => {
-            out.push(Case::new(
-                "packstore",
-                $op,
-                $wl,
-                1,
-                $ops,
-                Box::new(|_| Box::new(()) as State),
-                Box::new($body),
-            ))
+            out.push(
+                Case::new(
+                    "packstore",
+                    $op,
+                    $wl,
+                    1,
+                    $ops,
+                    Box::new(|_| Box::new(()) as State),
+                    Box::new($body),
+                )
+                .dims(Dims {
+                    items: $ops as i64,
+                    objects: store_objects_n,
+                    content: "structured".into(),
+                    ..Default::default()
+                }),
+            )
         };
     }
 
@@ -158,9 +205,12 @@ pub fn cases(env: &Env) -> Vec<Case> {
         lookups,
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &hk {
-                acc += st.get(*k).unwrap().len() as u64;
+                // The returned buffer is consumed at its ends: a get that
+                // handed back an empty or uninitialised slice could not
+                // reproduce this number.
+                acc = sink_bytes(acc, &st.get(*k).unwrap());
             }
             acc
         }
@@ -172,11 +222,9 @@ pub fn cases(env: &Env) -> Vec<Case> {
         lookups,
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &mk {
-                if matches!(st.get(*k), Err(e) if e.is_not_found()) {
-                    acc += 1;
-                }
+                acc = fold_bool(acc, matches!(st.get(*k), Err(e) if e.is_not_found()));
             }
             acc
         }
@@ -188,9 +236,9 @@ pub fn cases(env: &Env) -> Vec<Case> {
         lookups,
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &hk {
-                acc += st.get_record(*k).unwrap().len() as u64;
+                acc = sink_bytes(acc, &st.get_record(*k).unwrap());
             }
             acc
         }
@@ -202,11 +250,9 @@ pub fn cases(env: &Env) -> Vec<Case> {
         lookups,
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &hk {
-                if st.has(*k).unwrap() {
-                    acc += 1;
-                }
+                acc = fold_bool(acc, st.has(*k).unwrap());
             }
             acc
         }
@@ -218,11 +264,9 @@ pub fn cases(env: &Env) -> Vec<Case> {
         lookups,
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &mk {
-                if !st.has(*k).unwrap() {
-                    acc += 1;
-                }
+                acc = fold_bool(acc, st.has(*k).unwrap());
             }
             acc
         }
@@ -234,11 +278,11 @@ pub fn cases(env: &Env) -> Vec<Case> {
         lookups,
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &hk {
-                if let Some(n) = st.stored_size(*k).unwrap() {
-                    acc += n;
-                }
+                let n = st.stored_size(*k).unwrap();
+                acc = fold_bool(acc, n.is_some());
+                acc = fold_u64(acc, n.unwrap_or(0));
             }
             acc
         }
@@ -249,7 +293,14 @@ pub fn cases(env: &Env) -> Vec<Case> {
         "half-present",
         mixed.len(),
         move |env: &Env, _: &mut State| {
-            env.fx.ro.as_ref().unwrap().missing(&mx).unwrap().len() as u64
+            let out = env.fx.ro.as_ref().unwrap().missing(&mx).unwrap();
+            let mut acc = fold_u64(new_fold(), out.len() as u64);
+            // The whole returned set, in order: the answer is which keys are
+            // missing, not how many.
+            for k in &out {
+                acc = fold_key(acc, k);
+            }
+            acc
         }
     );
     let mx = mixed.clone();
@@ -260,7 +311,13 @@ pub fn cases(env: &Env) -> Vec<Case> {
         move |env: &Env, _: &mut State| {
             let mut ks = mx.clone();
             env.fx.ro.as_ref().unwrap().sort_by_location(&mut ks);
-            ks[0].as_bytes()[0] as u64
+            // The permutation is the output, so the whole reordered slice is
+            // folded rather than its first byte.
+            let mut acc = new_fold();
+            for k in &ks {
+                acc = fold_key(acc, k);
+            }
+            acc
         }
     );
     read_case!(
@@ -269,25 +326,42 @@ pub fn cases(env: &Env) -> Vec<Case> {
         64,
         |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for _ in 0..64 {
-                acc += st.segments().unwrap().len() as u64;
+                let segs = st.segments().unwrap();
+                acc = fold_u64(acc, segs.len() as u64);
+                for sg in &segs {
+                    acc = fold_u64(acc, sg.id);
+                }
             }
             acc
         }
     );
+    // Every sealed segment's index, not just the first: which segment a
+    // given object lands in follows the compressed record sizes, which the
+    // two cores' encoders do not produce identically, so a single-segment
+    // walk would cover a different number of records on each side. Over the
+    // whole store the count is the object count, in both cores.
     read_case!(
         "packstore.scan_index",
-        "one-segment",
-        1,
+        "all-segments",
+        fx.store_keys.len(),
         |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
-            st.scan_index(env.fx.ro_seg_id, |k, _off, slen| {
-                acc += slen as u64 + k.as_bytes()[0] as u64
-            })
-            .unwrap();
-            acc
+            let segs = st.segments().unwrap();
+            let mut acc = new_fold();
+            let mut n = 0u64;
+            for sg in &segs {
+                st.scan_index(sg.id, |k, _off, _slen| {
+                    // Offsets and segment ids are per-core facts (the records
+                    // are packed differently), so the fold covers the key set
+                    // and the record count, which are not.
+                    acc = fold_key(acc, &k);
+                    n += 1;
+                })
+                .unwrap();
+            }
+            fold_u64(acc, n)
         }
     );
     let nloc = lookups.min(4096);
@@ -298,10 +372,10 @@ pub fn cases(env: &Env) -> Vec<Case> {
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
             let locs: &Vec<RecordLoc> = &env.fx.ro_locs;
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for i in 0..nloc {
                 let l = locs[(i * 7919) % locs.len()];
-                acc += st.record(l.id, l.off).unwrap().len() as u64;
+                acc = sink_bytes(acc, &st.record(l.id, l.off).unwrap());
             }
             acc
         }
@@ -313,11 +387,9 @@ pub fn cases(env: &Env) -> Vec<Case> {
         lookups,
         move |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &hk {
-                if st.has_outside(env.fx.ro_seg_id, *k).unwrap() {
-                    acc += 1;
-                }
+                acc = fold_bool(acc, st.has_outside(env.fx.ro_seg_id, *k).unwrap());
             }
             acc
         }
@@ -328,11 +400,9 @@ pub fn cases(env: &Env) -> Vec<Case> {
         4096,
         |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for _ in 0..4096 {
-                if st.oldest_inflight_write().is_some() {
-                    acc += 1;
-                }
+                acc = fold_bool(acc, st.oldest_inflight_write().is_some());
             }
             acc
         }
@@ -343,9 +413,11 @@ pub fn cases(env: &Env) -> Vec<Case> {
         16,
         |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for _ in 0..16 {
-                acc += st.new_mark_set().marked() as u64 + 1;
+                let ms = st.new_mark_set();
+                acc = fold_u64(acc, ms.marked() as u64);
+                std::hint::black_box(&ms);
             }
             acc
         }
@@ -357,14 +429,13 @@ pub fn cases(env: &Env) -> Vec<Case> {
         |env: &Env, _: &mut State| {
             let st = env.fx.ro.as_ref().unwrap();
             let mut ms = st.new_mark_set();
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &env.fx.store_keys {
                 let (newly, present) = ms.mark(*k);
-                if newly && present {
-                    acc += 1;
-                }
+                acc = fold_bool(acc, newly);
+                acc = fold_bool(acc, present);
             }
-            acc + ms.marked() as u64
+            fold_u64(acc, ms.marked() as u64)
         }
     );
     read_case!(
@@ -377,11 +448,9 @@ pub fn cases(env: &Env) -> Vec<Case> {
             for k in &env.fx.store_keys {
                 ms.mark(*k);
             }
-            let mut acc = 0u64;
+            let mut acc = new_fold();
             for k in &env.fx.store_keys {
-                if ms.contains(*k) {
-                    acc += 1;
-                }
+                acc = fold_bool(acc, ms.contains(*k));
             }
             acc
         }
@@ -394,18 +463,28 @@ pub fn cases(env: &Env) -> Vec<Case> {
             let st = env.fx.ro.as_ref().unwrap();
             let live = key_set(&env.fx.garbage_live);
             let ls = st.liveness(|k| live.contains(&k)).unwrap();
-            ls.iter().map(|l| (l.live_keys + l.dead_keys) as u64).sum()
+            let mut acc = fold_u64(new_fold(), ls.len() as u64);
+            for l in &ls {
+                acc = fold_i64(acc, l.live_keys as i64);
+                acc = fold_i64(acc, l.dead_keys as i64);
+            }
+            acc
         }
     );
     read_case!(
         "packstore.verify",
         "full-scrub",
-        1,
+        fx.store_keys.len(),
         |env: &Env, _: &mut State| {
-            env.fx.ro.as_ref().unwrap().verify(|| false).unwrap();
-            1
+            let r = env.fx.ro.as_ref().unwrap().verify(|| false);
+            fold_bool(new_fold(), r.is_ok())
         }
     );
+    // Begin, observe the whole key set, abort. The observable result of the
+    // capture is what a following compact retains, which the
+    // packstore/barrier-* checks assert; here the cost of capturing is what
+    // is measured, and the answer folded is whether the store really was
+    // capturing at the time.
     read_case!(
         "packstore.barrier",
         "begin+observe+abort",
@@ -414,83 +493,114 @@ pub fn cases(env: &Env) -> Vec<Case> {
             let st = env.fx.ro.as_ref().unwrap();
             st.begin_barrier();
             st.observe_keys(&env.fx.store_keys);
+            let inflight = st.oldest_inflight_write().is_some();
             st.abort_barrier();
-            env.fx.store_keys.len() as u64
+            fold_bool(
+                fold_i64(new_fold(), env.fx.store_keys.len() as i64),
+                inflight,
+            )
         }
     );
 
     // --- writes -------------------------------------------------------
     let write_objs: Arc<Vec<Object>> = Arc::new(store_objects(p, p.store_objects.min(8000), 50000));
-    let tiny: Arc<Vec<Object>> =
-        Arc::new(store_objects_of_size(p, p.batch_ops.min(4000), 128, 60000));
-    let large: Arc<Vec<Object>> = Arc::new(store_objects_of_size(
-        p,
-        (p.batch_ops / 16).clamp(16, 256),
-        256 << 10,
-        61000,
-    ));
 
-    let put_case = |workload: &str, objs: Arc<Vec<Object>>, sync: bool| {
+    // packstore::put is swept over the object-size and content grid: the
+    // size decides how many segments a batch fills, and the content decides
+    // whether the record compresses and whether the store sees the object at
+    // all. Each point is capped to a bounded number of stored bytes, so the
+    // sweep costs about the same at every size.
+    let put_cap = p.payload_total / 8;
+    for ps in fx.payloads.iter() {
+        let lim = ps.limit(put_cap);
+        let objs: Arc<Vec<Object>> = Arc::new(blobs_of(&lim));
         let n = objs.len();
         let b = crate::cases::pack::pack_bytes(&objs);
         let o2 = Arc::clone(&objs);
-        Case::new(
-            "packstore",
-            "packstore.put",
-            workload,
-            1,
-            n,
-            Box::new(move |env| {
-                Box::new(if sync {
-                    fresh_store_sync(env, "ps-put")
-                } else {
-                    fresh_store(env, "ps-put")
-                }) as State
-            }),
-            Box::new(move |_, s| {
-                let h = s.downcast_ref::<StoreHandle>().unwrap();
-                let mut acc = 0u64;
-                for o in o2.iter() {
-                    h.store().put(o.key, &o.bytes).unwrap();
-                    acc += o.key.as_bytes()[0] as u64;
-                }
-                acc
-            }),
-        )
-        .bytes(b)
-        .per_rep(Box::new(free_store_handle))
-    };
-    out.push(put_case("tiny-128B/sync-off", Arc::clone(&tiny), false));
-    out.push(put_case("tiny-128B/sync-on", Arc::clone(&tiny), true));
-    out.push(put_case("large-256KiB/sync-off", Arc::clone(&large), false));
-
-    let t1 = Arc::clone(&tiny);
-    let t2 = Arc::clone(&tiny);
+        out.push(
+            Case::new(
+                "packstore",
+                "packstore.put",
+                &format!("{}/sync-off", lim.name),
+                1,
+                n,
+                Box::new(move |env| Box::new(fresh_store(env, "ps-put")) as State),
+                Box::new(move |_, s| {
+                    let h = s.downcast_ref::<StoreHandle>().unwrap();
+                    let mut acc = new_fold();
+                    for o in o2.iter() {
+                        h.store().put(o.key, &o.bytes).unwrap();
+                        // put's only result is whether it succeeded; the
+                        // object it stored is asserted by the packstore/put-*
+                        // checks, outside every measured interval.
+                        acc = fold_bool(acc, true);
+                    }
+                    acc
+                }),
+            )
+            .bytes(b)
+            .dims(lim.dims())
+            .per_rep(Box::new(free_store_handle)),
+        );
+    }
+    // The same objects written a second time into a store that already holds
+    // them: the pure dedup path, at one representative size.
+    let dup_set = payload_named(&fx.payloads, "4KiB-random").limit(put_cap);
+    let dup_objs: Arc<Vec<Object>> = Arc::new(blobs_of(&dup_set));
+    let dup_bytes = crate::cases::pack::pack_bytes(&dup_objs);
+    let d1 = Arc::clone(&dup_objs);
+    let d2 = Arc::clone(&dup_objs);
     out.push(
         Case::new(
             "packstore",
             "packstore.put",
-            "duplicate/sync-off",
+            "4KiB-random/already-present",
             1,
-            tiny.len(),
+            dup_objs.len(),
             Box::new(move |env| {
                 let h = fresh_store(env, "ps-put-dup");
-                for o in t1.iter() {
+                for o in d1.iter() {
                     h.store().put(o.key, &o.bytes).unwrap();
                 }
                 Box::new(h) as State
             }),
             Box::new(move |_, s| {
                 let h = s.downcast_ref::<StoreHandle>().unwrap();
-                let mut acc = 0u64;
-                for o in t2.iter() {
+                let mut acc = new_fold();
+                for o in d2.iter() {
                     h.store().put(o.key, &o.bytes).unwrap();
-                    acc += 1;
+                    acc = fold_bool(acc, true);
                 }
                 acc
             }),
         )
-        .bytes(crate::cases::pack::pack_bytes(&tiny))
+        .bytes(dup_bytes)
+        .dims(dup_set.dims())
+        .per_rep(Box::new(free_store_handle)),
+    );
+    // The durability dimension, at the same representative size: every
+    // append is fsynced rather than batched.
+    let d3 = Arc::clone(&dup_objs);
+    out.push(
+        Case::new(
+            "packstore",
+            "packstore.put",
+            "4KiB-random/sync-on",
+            1,
+            dup_objs.len(),
+            Box::new(move |env| Box::new(fresh_store_sync(env, "ps-put-sync")) as State),
+            Box::new(move |_, s| {
+                let h = s.downcast_ref::<StoreHandle>().unwrap();
+                let mut acc = new_fold();
+                for o in d3.iter() {
+                    h.store().put(o.key, &o.bytes).unwrap();
+                    acc = fold_bool(acc, true);
+                }
+                acc
+            }),
+        )
+        .bytes(dup_bytes)
+        .dims(dup_set.dims())
         .per_rep(Box::new(free_store_handle)),
     );
 
@@ -506,10 +616,17 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(move |_, s| {
                 let h = s.downcast_ref::<StoreHandle>().unwrap();
                 h.store().write_batch(object_seq(&w1)).unwrap();
-                w1.len() as u64
+                let segs = h.store().segments().unwrap();
+                fold_i64(new_fold(), segs.len() as i64)
             }),
         )
         .bytes(crate::cases::pack::pack_bytes(&write_objs))
+        .dims(Dims {
+            items: write_objs.len() as i64,
+            objects: write_objs.len() as i64,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_store_handle)),
     );
 
@@ -523,15 +640,24 @@ pub fn cases(env: &Env) -> Vec<Case> {
             Box::new(|env| Box::new(fresh_store(env, "ps-append")) as State),
             Box::new(|env, s| {
                 let h = s.downcast_ref::<StoreHandle>().unwrap();
+                let mut acc = new_fold();
                 for (i, rec) in env.fx.wire_records.iter().enumerate() {
                     h.store()
                         .append_record(env.fx.pack_objects[i].key, rec)
                         .unwrap();
+                    acc = fold_bool(acc, true);
                 }
                 h.store().sync().unwrap();
-                env.fx.wire_records.len() as u64
+                fold_bool(acc, true)
             }),
         )
+        .bytes(crate::cases::pack::pack_bytes(&fx.pack_objects))
+        .dims(Dims {
+            items: fx.wire_records.len() as i64,
+            objects: fx.pack_objects.len() as i64,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_store_handle)),
     );
 
@@ -557,10 +683,20 @@ pub fn cases(env: &Env) -> Vec<Case> {
                             },
                         );
                         res.unwrap();
-                        stats.stored as u64
+                        fold_i64(
+                            fold_i64(new_fold(), stats.stored as i64),
+                            stats.deduped as i64,
+                        )
                     }),
                 )
                 .bytes(crate::cases::pack::pack_bytes(&write_objs))
+                .dims(Dims {
+                    items: write_objs.len() as i64,
+                    objects: write_objs.len() as i64,
+                    content: "structured".into(),
+                    ..Default::default()
+                })
+                .cross()
                 .per_rep(Box::new(free_store_handle)),
             );
         }
@@ -597,10 +733,20 @@ pub fn cases(env: &Env) -> Vec<Case> {
                     },
                 );
                 res.unwrap();
-                stats.deduped as u64
+                fold_i64(
+                    fold_i64(new_fold(), stats.stored as i64),
+                    stats.deduped as i64,
+                )
             }),
         )
         .bytes(crate::cases::pack::pack_bytes(&write_objs))
+        .dims(Dims {
+            items: write_objs.len() as i64,
+            objects: write_objs.len() as i64,
+            content: "duplicate".into(),
+            ..Default::default()
+        })
+        .cross()
         .per_rep(Box::new(free_store_handle)),
     );
 
@@ -611,7 +757,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
             "packstore.compact",
             "90-percent-dead",
             1,
-            1,
+            fx.store_keys.len(),
             Box::new(|env| {
                 Box::new(copied_store(env, &env.fx.garbage_template, "ps-compact")) as State
             }),
@@ -628,9 +774,21 @@ pub fn cases(env: &Env) -> Vec<Case> {
                         },
                     )
                     .unwrap();
-                stats.records_copied as u64 + stats.bytes_freed
+                fold_u64(
+                    fold_i64(
+                        fold_i64(new_fold(), stats.records_copied as i64),
+                        stats.segments_scanned as i64,
+                    ),
+                    stats.bytes_freed,
+                )
             }),
         )
+        .dims(Dims {
+            objects: fx.store_keys.len() as i64,
+            items: fx.garbage_live.len() as i64,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_store_handle)),
     );
     out.push(
@@ -639,7 +797,7 @@ pub fn cases(env: &Env) -> Vec<Case> {
             "packstore.compact",
             "nothing-dead",
             1,
-            1,
+            fx.store_keys.len(),
             Box::new(|env| {
                 Box::new(copied_store(
                     env,
@@ -659,9 +817,21 @@ pub fn cases(env: &Env) -> Vec<Case> {
                         },
                     )
                     .unwrap();
-                stats.segments_scanned as u64
+                fold_u64(
+                    fold_i64(
+                        fold_i64(new_fold(), stats.records_copied as i64),
+                        stats.segments_scanned as i64,
+                    ),
+                    stats.bytes_freed,
+                )
             }),
         )
+        .dims(Dims {
+            objects: fx.store_keys.len() as i64,
+            items: fx.store_keys.len() as i64,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_store_handle)),
     );
     out.push(
@@ -678,9 +848,16 @@ pub fn cases(env: &Env) -> Vec<Case> {
                 let h = s.downcast_ref::<StoreHandle>().unwrap();
                 let segs = h.store().segments().unwrap();
                 h.store().remove(segs[0].id).unwrap();
-                segs[0].id + 1
+                let after = h.store().segments().unwrap();
+                fold_i64(fold_u64(new_fold(), segs[0].id), after.len() as i64)
             }),
         )
+        .dims(Dims {
+            objects: fx.store_keys.len() as i64,
+            items: 1,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_store_handle)),
     );
     out.push(
@@ -692,14 +869,18 @@ pub fn cases(env: &Env) -> Vec<Case> {
             1,
             Box::new(|env| Box::new(copied_store(env, &env.fx.store_template, "ps-wipe")) as State),
             Box::new(|_, s| {
-                s.downcast_ref::<StoreHandle>()
-                    .unwrap()
-                    .store()
-                    .wipe()
-                    .unwrap();
-                1
+                let h = s.downcast_ref::<StoreHandle>().unwrap();
+                h.store().wipe().unwrap();
+                let segs = h.store().segments().unwrap();
+                fold_i64(new_fold(), segs.len() as i64)
             }),
         )
+        .dims(Dims {
+            objects: fx.store_keys.len() as i64,
+            items: 1,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_store_handle)),
     );
     let pv_ops = (p.batch_ops / 8).min(256);
@@ -715,15 +896,21 @@ pub fn cases(env: &Env) -> Vec<Case> {
             }),
             Box::new(move |env, s| {
                 let h = s.downcast_ref::<StoreHandle>().unwrap();
-                let mut acc = 0u64;
+                let mut acc = new_fold();
                 for i in 0..pv_ops {
                     let o = &env.fx.pack_objects[i % env.fx.pack_objects.len()];
                     h.store().put_verified(o.key, &o.bytes).unwrap();
-                    acc += 1;
+                    acc = fold_bool(acc, true);
                 }
                 acc
             }),
         )
+        .dims(Dims {
+            items: pv_ops as i64,
+            objects: fx.store_keys.len() as i64,
+            content: "structured".into(),
+            ..Default::default()
+        })
         .per_rep(Box::new(free_store_handle)),
     );
     out
@@ -993,7 +1180,29 @@ pub fn checks(env: &Env, rec: &mut Recorder) {
             },
         );
         let after_bytes = dir_bytes(&dir);
-        let retained = fx.garbage_live.iter().all(|k| cst.get(*k).is_ok());
+        // Retention is a statement about content, not about presence: every
+        // object that was supposed to survive is read back and re-hashed, and
+        // the store is content-addressed, so a key that matches its own
+        // re-hash is a complete verification of the retained bytes.
+        let mut retained = true;
+        let mut retained_detail = String::new();
+        for k in &fx.garbage_live {
+            match cst.get(*k) {
+                Ok(got) => {
+                    let rehash = Key::new(Type::Blob, got.len() as u64, &got);
+                    if rehash != *k {
+                        retained = false;
+                        retained_detail = format!("{k} re-hashed to {rehash}");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    retained = false;
+                    retained_detail = format!("{k}: {e}");
+                    break;
+                }
+            }
+        }
         let dropped = fx
             .store_keys
             .iter()
@@ -1003,10 +1212,32 @@ pub fn checks(env: &Env, rec: &mut Recorder) {
         rec.want(
             "packstore",
             "packstore.compact",
-            "packstore/compact-retains-live",
+            "packstore/compact-retains-live-content",
             stats.is_ok() && retained,
-            format!("a live object was lost by compaction ({stats:?})"),
+            format!(
+                "a live object did not survive compaction intact ({stats:?}): {retained_detail}"
+            ),
             format!("live={}", fx.garbage_live.len()),
+        );
+        // And everything that was eligible really was reclaimed: no object
+        // the predicate called dead may still be readable from a compacted
+        // segment.
+        let survivors = fx
+            .store_keys
+            .iter()
+            .enumerate()
+            .filter(|(i, k)| i % 10 != 0 && cst.has(**k).unwrap_or(false))
+            .count();
+        rec.want_local(
+            "packstore",
+            "packstore.compact",
+            "packstore/compact-drops-dead",
+            dropped > 0 && dropped + survivors == fx.store_keys.len() - fx.garbage_live.len(),
+            format!(
+                "{dropped} dead objects dropped, {survivors} still present, {} were dead",
+                fx.store_keys.len() - fx.garbage_live.len()
+            ),
+            format!("dropped={dropped} survivors={survivors}"),
         );
         let compacted = stats.as_ref().map(|s| s.segments_compacted).unwrap_or(0);
         rec.want_local(
@@ -1160,4 +1391,140 @@ pub fn checks(env: &Env, rec: &mut Recorder) {
         vst.close().unwrap();
     }
     let _ = fs::remove_dir_all(&vdir);
+
+    // --- the write barrier -------------------------------------------
+    // begin_barrier/observe_keys/abort_barrier had no correctness evidence at
+    // all; a timing of a call that does nothing observable is not a
+    // measurement of anything. The observable contract is that keys seen
+    // during a capture are treated as live by the next compact even when the
+    // liveness predicate calls them dead -- which is how an ingest may run
+    // concurrently with a mark -- and that an aborted capture protects
+    // nothing.
+    for (id, abort, want_protected) in [
+        (
+            "packstore/barrier-observed-keys-survive-compact",
+            false,
+            true,
+        ),
+        ("packstore/barrier-abort-protects-nothing", true, false),
+    ] {
+        let bdir = copied_dir(env, &fx.garbage_template, "check-barrier");
+        {
+            let bst = packstore::Store::open_with(&bdir, store_options(p)).unwrap();
+            // Pick objects the predicate below calls dead, and observe them.
+            let observed: Vec<Key> = fx
+                .store_keys
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| i % 10 != 0)
+                .map(|(_, k)| *k)
+                .take(32)
+                .collect();
+            bst.begin_barrier();
+            bst.observe_keys(&observed);
+            if abort {
+                bst.abort_barrier();
+            }
+            let live_only = key_set(&fx.garbage_live);
+            let cres = bst.compact(
+                |k| live_only.contains(&k),
+                CompactOpts {
+                    min_dead_ratio: 0.5,
+                    ..Default::default()
+                },
+            );
+            let protected = observed
+                .iter()
+                .filter(|k| bst.has(**k).unwrap_or(false))
+                .count();
+            let got = protected == observed.len();
+            rec.want(
+                "packstore",
+                "packstore.barrier",
+                id,
+                cres.is_ok() && got == want_protected,
+                format!(
+                    "{protected} of {} observed keys survived the compaction (wanted all={want_protected}): {cres:?}",
+                    observed.len()
+                ),
+                format!("observed={} protected={got}", observed.len()),
+            );
+            bst.close().unwrap();
+        }
+        let _ = fs::remove_dir_all(&bdir);
+    }
+
+    // --- append_record + sync ----------------------------------------
+    // The other operation with no check: re-appending already-encoded
+    // records. The contract is that the store afterwards holds exactly those
+    // objects, byte for byte, and that they are still there after the sync
+    // the batch ends with and a reopen.
+    let adir = work_dir(env, "check-append");
+    let mut aerr: Option<String> = None;
+    {
+        let ast = packstore::Store::open_with(&adir, store_options(p)).unwrap();
+        for (i, r) in fx.wire_records.iter().enumerate() {
+            if let Err(e) = ast.append_record(fx.pack_objects[i].key, r) {
+                aerr = Some(e.to_string());
+                break;
+            }
+        }
+        if aerr.is_none()
+            && let Err(e) = ast.sync()
+        {
+            aerr = Some(e.to_string());
+        }
+        ast.close().unwrap();
+    }
+    {
+        // Reopened from disk, so the check covers the sync and not just the
+        // in-memory state the appends left behind.
+        let ast = packstore::Store::open_with(&adir, store_options(p)).unwrap();
+        let mut append_ok = aerr.is_none();
+        let mut append_detail = format!("{aerr:?}");
+        for o in &fx.pack_objects {
+            if !append_ok {
+                break;
+            }
+            match ast.get(o.key) {
+                Ok(got) if got == o.bytes => {}
+                other => {
+                    append_ok = false;
+                    append_detail = format!("{}: {other:?}", o.key);
+                }
+            }
+        }
+        rec.want(
+            "packstore",
+            "packstore.append_record",
+            "packstore/append-record-roundtrip",
+            append_ok,
+            format!(
+                "an appended record did not read back as the object it encodes: {append_detail}"
+            ),
+            crate::cases::pack::pack_content_digest(&fx.pack_objects),
+        );
+        // A nil record is rejected rather than stored as an empty object.
+        // Rust spells Go's nil slice as an empty one.
+        let nil_err = ast.append_record(fx.pack_objects[0].key, &[]);
+        rec.want(
+            "packstore",
+            "packstore.append_record",
+            "packstore/append-record-rejects-nil",
+            matches!(&nil_err, Err(e) if e.is_corrupt()),
+            format!("an empty record must be reported as corrupt, got {nil_err:?}"),
+            "ErrCorrupt",
+        );
+        // And the scrub passes over what the appends wrote.
+        rec.want(
+            "packstore",
+            "packstore.append_record",
+            "packstore/append-record-scrubs-clean",
+            ast.verify(|| false).is_ok(),
+            "the store did not scrub clean after a batch of appended records",
+            "clean",
+        );
+        ast.close().unwrap();
+    }
+    let _ = fs::remove_dir_all(&adir);
 }

@@ -17,19 +17,11 @@ use crate::fixtures::{
 };
 use crate::harness::{Case, Recorder};
 
-/// The five batched payload sets, addressed by index so a case can name one
-/// without borrowing the fixtures at construction time.
+/// One point of the (size, content) payload grid, addressed by index so a
+/// case can name it without borrowing the fixtures at construction time.
 pub fn payload_set(fx: &Fixtures, i: usize) -> &PayloadSet {
-    match i {
-        0 => &fx.tiny,
-        1 => &fx.small,
-        2 => &fx.text,
-        3 => &fx.large,
-        _ => &fx.rand,
-    }
+    &fx.payloads[i]
 }
-
-pub const PAYLOAD_SETS: [usize; 5] = [0, 1, 2, 3, 4];
 
 /// The registry, in module order. Every entry maps to one public Rust module,
 /// which is how the coverage matrix stays checkable against the two cores'

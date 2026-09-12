@@ -38,7 +38,8 @@ func refstoreCases(e *Env) []Case {
 	var out []Case
 	out = append(out,
 		Case{
-			Group: "refstore", Op: "refstore.open", Workload: "empty", Threads: 1, Ops: 1, PerRep: true,
+			Group: "refstore", Op: "refstore.open", Workload: "empty", Threads: 1, Ops: 1,
+			Dims: Dims{Entries: 0, Items: 1, Content: "structured"}, PerRep: true,
 			Setup: func(en *Env) any { return &refOpenState{dir: workDir(en, "rs-open-empty")} },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*refOpenState)
@@ -58,7 +59,8 @@ func refstoreCases(e *Env) []Case {
 			},
 		},
 		Case{
-			Group: "refstore", Op: "refstore.open", Workload: "populated-reopen", Threads: 1, Ops: 1, PerRep: true,
+			Group: "refstore", Op: "refstore.open", Workload: "populated-reopen", Threads: 1, Ops: 1,
+			Dims: Dims{Entries: int64(n), Items: 1, Content: "structured"}, PerRep: true,
 			Setup: func(en *Env) any {
 				return &refOpenState{dir: copiedDir(en, en.fx.RefsTemplate, "rs-open-full")}
 			},
@@ -84,7 +86,8 @@ func refstoreCases(e *Env) []Case {
 			},
 		},
 		Case{
-			Group: "refstore", Op: "refstore.close", Workload: "populated", Threads: 1, Ops: 1, PerRep: true,
+			Group: "refstore", Op: "refstore.close", Workload: "populated", Threads: 1, Ops: 1,
+			Dims: Dims{Entries: int64(n), Items: 1, Content: "structured"}, PerRep: true,
 			Setup: func(en *Env) any {
 				dir := copiedDir(en, en.fx.RefsTemplate, "rs-close")
 				return &refOpenState{dir: dir, st: mustV(refstore.Open(dir, false))}
@@ -106,16 +109,19 @@ func refstoreCases(e *Env) []Case {
 		out = append(out, Case{
 			Group: "refstore", Op: "refstore.put",
 			Workload: fmt.Sprintf("records-%d/sync-%v", n, sync), Threads: 1,
-			Ops: n, PerRep: true,
-			Setup: func(en *Env) any { return freshRefs(en, "rs-put", sync) },
+			Ops:    n,
+			Dims:   Dims{Entries: int64(n), Items: int64(n), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return freshRefs(en, "rs-put", sync) },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*refHandle).st
-				var acc uint64
+				acc := newFold()
 				for _, r := range en.fx.RefBatch {
-					if err := st.Put(r.Name, r.Data); err != nil {
+					err := st.Put(r.Name, r.Data)
+					if err != nil {
 						panic(err)
 					}
-					acc += uint64(len(r.Data))
+					acc = foldBool(acc, true)
 				}
 				return acc
 			},
@@ -125,28 +131,31 @@ func refstoreCases(e *Env) []Case {
 	out = append(out,
 		Case{
 			Group: "refstore", Op: "refstore.put_batch",
-			Workload: fmt.Sprintf("records-%d/sync-false", n), Threads: 1, Ops: n, PerRep: true,
-			Setup: func(en *Env) any { return freshRefs(en, "rs-batch", false) },
+			Workload: fmt.Sprintf("records-%d/sync-false", n), Threads: 1, Ops: n,
+			Dims:   Dims{Entries: int64(n), Items: int64(n), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return freshRefs(en, "rs-batch", false) },
 			Run: func(en *Env, s any) uint64 {
 				if err := s.(*refHandle).st.PutBatch(en.fx.RefBatch); err != nil {
 					panic(err)
 				}
-				return uint64(len(en.fx.RefBatch))
+				return foldI64(newFold(), int64(len(en.fx.RefBatch)))
 			},
 			Free: func(_ *Env, s any) { s.(*refHandle).close() },
 		},
 		Case{
 			Group: "refstore", Op: "refstore.get", Workload: "hit", Threads: 1, Ops: len(hits),
+			Dims:  Dims{Entries: int64(n), Items: int64(len(hits)), Content: "structured"},
 			Setup: func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-get", false) },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*refHandle).st
-				var acc uint64
+				acc := newFold()
 				for _, name := range hits {
 					b, err := st.Get(name)
 					if err != nil {
 						panic(err)
 					}
-					acc += uint64(len(b))
+					acc = sinkBytes(acc, b)
 				}
 				return acc
 			},
@@ -154,43 +163,53 @@ func refstoreCases(e *Env) []Case {
 		},
 		Case{
 			Group: "refstore", Op: "refstore.get", Workload: "miss", Threads: 1, Ops: len(misses),
+			Dims:  Dims{Entries: int64(n), Items: int64(len(misses)), Content: "structured"},
 			Setup: func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-get-miss", false) },
 			Run: func(_ *Env, s any) uint64 {
 				st := s.(*refHandle).st
-				var acc uint64
+				acc := newFold()
 				for _, name := range misses {
-					if _, err := st.Get(name); errors.Is(err, refstore.ErrNotFound) {
-						acc++
-					}
+					_, err := st.Get(name)
+					acc = foldBool(acc, errors.Is(err, refstore.ErrNotFound))
 				}
 				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*refHandle).close() },
 		},
 		Case{
-			Group: "refstore", Op: "refstore.all", Workload: fmt.Sprintf("records-%d", n), Threads: 1, Ops: 1,
+			Group: "refstore", Op: "refstore.all", Workload: fmt.Sprintf("records-%d", n), Threads: 1,
+			Ops:   n,
+			Dims:  Dims{Entries: int64(n), Items: 1, Content: "structured"},
 			Setup: func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-all", false) },
 			Run: func(_ *Env, s any) uint64 {
 				recs, err := s.(*refHandle).st.All()
 				if err != nil {
 					panic(err)
 				}
-				return uint64(len(recs))
+				acc := foldI64(newFold(), int64(len(recs)))
+				for _, r := range recs {
+					acc = foldStr(acc, r.Name)
+					acc = sinkBytes(acc, r.Data)
+				}
+				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*refHandle).close() },
 		},
 		Case{
 			Group: "refstore", Op: "refstore.delete", Workload: fmt.Sprintf("records-%d", n), Threads: 1,
-			Ops: n, PerRep: true,
-			Setup: func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-delete", false) },
+			Ops:    n,
+			Dims:   Dims{Entries: int64(n), Items: int64(n), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-delete", false) },
 			Run: func(en *Env, s any) uint64 {
 				st := s.(*refHandle).st
-				var acc uint64
+				acc := newFold()
 				for _, name := range en.fx.RefNames {
-					if err := st.Delete(name); err != nil {
+					err := st.Delete(name)
+					if err != nil {
 						panic(err)
 					}
-					acc++
+					acc = foldBool(acc, true)
 				}
 				return acc
 			},
@@ -198,13 +217,19 @@ func refstoreCases(e *Env) []Case {
 		},
 		Case{
 			Group: "refstore", Op: "refstore.wipe", Workload: fmt.Sprintf("records-%d", n), Threads: 1,
-			Ops: 1, PerRep: true,
-			Setup: func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-wipe", false) },
+			Ops:    1,
+			Dims:   Dims{Entries: int64(n), Items: 1, Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return copiedRefs(en, en.fx.RefsTemplate, "rs-wipe", false) },
 			Run: func(_ *Env, s any) uint64 {
 				if err := s.(*refHandle).st.Wipe(); err != nil {
 					panic(err)
 				}
-				return 1
+				recs, err := s.(*refHandle).st.All()
+				if err != nil {
+					panic(err)
+				}
+				return foldI64(newFold(), int64(len(recs)))
 			},
 			Free: func(_ *Env, s any) { s.(*refHandle).close() },
 		},
@@ -333,7 +358,8 @@ func inboxCases(e *Env) []Case {
 
 	out = append(out,
 		Case{
-			Group: "inbox", Op: "inbox.open", Workload: "empty", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
+			Group: "inbox", Op: "inbox.open", Workload: "empty", Threads: p.ThreadsMulti, Ops: 1,
+			Dims: Dims{Items: 1, Content: "structured"}, PerRep: true,
 			Setup: func(en *Env) any {
 				st := freshStore(en, "inbox-open-store")
 				return &inboxState{dir: workDir(en, "inbox-open"), store: st}
@@ -345,13 +371,15 @@ func inboxCases(e *Env) []Case {
 					panic(err)
 				}
 				is.ib = ib
-				return 1
+				return foldBool(newFold(), ib != nil)
 			},
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
 		Case{
 			Group: "inbox", Op: "inbox.open", Workload: "sweeps-staged-tmp-files",
-			Threads: p.ThreadsMulti, Ops: p.InboxPacks, PerRep: true,
+			Threads: p.ThreadsMulti, Ops: p.InboxPacks,
+			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
+			PerRep: true,
 			Setup: func(en *Env) any {
 				// Stage without committing, then close: the tmp files are
 				// exactly what the next Open has to sweep.
@@ -368,24 +396,32 @@ func inboxCases(e *Env) []Case {
 					panic(err)
 				}
 				is.ib = ib
-				return 1
+				return foldBool(newFold(), ib != nil)
 			},
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
 		Case{
 			Group: "inbox", Op: "inbox.stage", Workload: fmt.Sprintf("packs-%d", p.InboxPacks),
-			Threads: p.ThreadsMulti, Ops: p.InboxPacks, Bytes: inboxBytes(fx), PerRep: true,
-			Setup: func(en *Env) any { return newInbox(en, "inbox-stage", en.Profile.ThreadsMulti) },
+			Threads: p.ThreadsMulti, Ops: p.InboxPacks, Bytes: fx.InboxLogicalBytes, BytesKind: BytesPayload,
+			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
+			PerRep: true,
+			Setup:  func(en *Env) any { return newInbox(en, "inbox-stage", en.Profile.ThreadsMulti) },
 			Run: func(en *Env, s any) uint64 {
 				is := s.(*inboxState)
 				is.stageAll(en.fx)
-				return uint64(len(is.tmps))
+				acc := foldI64(newFold(), int64(len(is.tmps)))
+				for _, h := range is.hashes {
+					acc = foldBytes(acc, h[:])
+				}
+				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
 		Case{
 			Group: "inbox", Op: "inbox.discard", Workload: fmt.Sprintf("packs-%d", p.InboxPacks),
-			Threads: p.ThreadsMulti, Ops: p.InboxPacks, PerRep: true,
+			Threads: p.ThreadsMulti, Ops: p.InboxPacks,
+			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
+			PerRep: true,
 			Setup: func(en *Env) any {
 				is := newInbox(en, "inbox-discard", en.Profile.ThreadsMulti)
 				is.stageAll(en.fx)
@@ -393,10 +429,12 @@ func inboxCases(e *Env) []Case {
 			},
 			Run: func(_ *Env, s any) uint64 {
 				is := s.(*inboxState)
+				acc := newFold()
 				for _, tmp := range is.tmps {
 					is.ib.Discard(tmp)
+					acc = foldStr(acc, tmp)
 				}
-				return uint64(len(is.tmps))
+				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
@@ -404,7 +442,9 @@ func inboxCases(e *Env) []Case {
 		// every pack's objects into the packstore.
 		Case{
 			Group: "inbox", Op: "inbox.drain", Workload: fmt.Sprintf("packs-%d/new", p.InboxPacks),
-			Threads: p.ThreadsMulti, Ops: p.InboxPacks, Bytes: inboxBytes(fx), PerRep: true,
+			Threads: p.ThreadsMulti, Ops: p.InboxPacks, Bytes: fx.InboxLogicalBytes, BytesKind: BytesPayload,
+			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
+			PerRep: true,
 			Setup: func(en *Env) any {
 				is := newInbox(en, "inbox-drain", en.Profile.ThreadsMulti)
 				is.stageAll(en.fx)
@@ -412,18 +452,17 @@ func inboxCases(e *Env) []Case {
 			},
 			Run: func(en *Env, s any) uint64 {
 				is := s.(*inboxState)
-				var acc uint64
+				acc := newFold()
 				for i, tmp := range is.tmps {
 					added, err := is.ib.Commit(tmp, is.hashes[i], en.fx.InboxRoots[i])
 					if err != nil {
 						panic(err)
 					}
-					if added {
-						acc++
-					}
+					acc = foldBool(acc, added)
 				}
 				for _, root := range en.fx.InboxRoots {
 					is.ib.WaitFor(root)
+					acc = foldKey(acc, root)
 				}
 				return acc
 			},
@@ -431,7 +470,9 @@ func inboxCases(e *Env) []Case {
 		},
 		Case{
 			Group: "inbox", Op: "inbox.commit", Workload: fmt.Sprintf("packs-%d/duplicate", p.InboxPacks),
-			Threads: p.ThreadsMulti, Ops: p.InboxPacks, PerRep: true,
+			Threads: p.ThreadsMulti, Ops: p.InboxPacks,
+			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
+			PerRep: true,
 			Setup: func(en *Env) any {
 				// The idempotent path needs the first entry to still be
 				// in the directory. Closing the inbox first retires the
@@ -451,22 +492,22 @@ func inboxCases(e *Env) []Case {
 			},
 			Run: func(en *Env, s any) uint64 {
 				is := s.(*inboxState)
-				var acc uint64
+				acc := newFold()
 				for i, tmp := range is.tmps {
 					added, err := is.ib.Commit(tmp, is.hashes[i], en.fx.InboxRoots[i])
 					if err != nil {
 						panic(err)
 					}
-					if !added {
-						acc++
-					}
+					acc = foldBool(acc, added)
 				}
 				return acc
 			},
 			Free: func(_ *Env, s any) { s.(*inboxState).close() },
 		},
 		Case{
-			Group: "inbox", Op: "inbox.close", Workload: "drained", Threads: p.ThreadsMulti, Ops: 1, PerRep: true,
+			Group: "inbox", Op: "inbox.close", Workload: "drained", Threads: p.ThreadsMulti, Ops: 1,
+			Dims:   Dims{Items: int64(p.InboxPacks), Objects: int64(p.InboxPacks * 32), Content: "structured"},
+			PerRep: true,
 			Setup: func(en *Env) any {
 				is := newInbox(en, "inbox-close", en.Profile.ThreadsMulti)
 				is.stageAll(en.fx)
