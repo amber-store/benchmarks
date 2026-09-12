@@ -61,6 +61,20 @@
       packages = eachSystem (system: pkgs:
         let fixtures = pkgs.callPackage ./nix/fixtures.nix { };
         in {
+          # The pinned core sources themselves, as buildable paths.
+          # core-ops/run.sh compares the Go module its driver resolved
+          # against `amber-go-src`, because a module hash pins content while
+          # the flake input pins the commit: a report that names a revision
+          # should have measured that revision.
+          amber-go-src = pkgs.runCommandLocal
+            "amber-go-src-${builtins.substring 0 12 goRev}" { } ''
+              cp -r ${amber-go-src} "$out"
+            '';
+          amber-rust-src = pkgs.runCommandLocal
+            "amber-rust-src-${builtins.substring 0 12 rustRev}" { } ''
+              cp -r ${amber-rust-src} "$out"
+            '';
+
           # Deterministic Nix closures used by the "nix" scenario group.
           nix-fixtures-smoke = fixtures.smoke;
           nix-fixtures-standard = fixtures.standard;
@@ -130,6 +144,11 @@
             rustc
             rustfmt
             clippy
+            # core-ops: pinning both native drivers to one CPU set (taskset)
+            # and probing the scratch filesystem for extended attributes
+            # (setfattr) before either driver builds a fixture
+            util-linux
+            attr
             # a local-checkout override of either core still needs its
             # toolchain; the pinned default path does not.
             go
@@ -149,9 +168,21 @@
         };
       });
 
+      # `nix fmt` formats everything this repository owns: the cross-system
+      # harness, the core-operation benchmark's Rust driver (its own crate,
+      # not a workspace member) and both of its Go programs.
       formatter = eachSystem (_system: pkgs:
         pkgs.writeShellScriptBin "fmt" ''
-          exec ${pkgs.rustfmt}/bin/cargo-fmt --all
+          set -euo pipefail
+          ${pkgs.rustfmt}/bin/cargo-fmt --all
+          if [ -f core-ops/rust/Cargo.toml ]; then
+            (cd core-ops/rust && ${pkgs.rustfmt}/bin/cargo-fmt --all)
+          fi
+          for dir in core-ops/go core-ops/coverage/goexports; do
+            if [ -d "$dir" ]; then
+              ${pkgs.go}/bin/gofmt -w "$dir"
+            fi
+          done
         '');
     };
 }

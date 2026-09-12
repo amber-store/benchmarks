@@ -102,6 +102,84 @@ jobs:
             bench-report/*.csv
           if-no-files-found: warn
 
+  # The core-operation benchmark: both native drivers, the whole correctness
+  # suite, the coverage matrix and the report's own tests. Timings from a
+  # shared runner are not comparable, so this job is a correctness gate — it
+  # runs the `quick` profile, which exists for exactly that.
+  core-ops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint both drivers
+        run: |
+          set -euo pipefail
+          nix develop --command bash -c 'cd core-ops/go && gofmt -l . | tee /tmp/gofmt.out && test ! -s /tmp/gofmt.out'
+          nix develop --command bash -c 'cd core-ops/go && go vet ./...'
+          nix develop --command bash -c 'cd core-ops/coverage/goexports && gofmt -l . | tee /tmp/gofmt2.out && test ! -s /tmp/gofmt2.out'
+          nix develop --command bash -c 'cd core-ops/rust && cargo fmt --check'
+          nix develop --command bash -c 'cd core-ops/rust && cargo clippy --locked --all-targets'
+
+      - name: The report's own tests
+        run: nix develop --command python3 -m unittest discover -s core-ops/report
+
+      - name: The coverage matrix covers both cores' whole exported surface
+        run: |
+          set -euo pipefail
+          # Re-extract from the pinned sources, so a core bump that adds an
+          # export fails here rather than quietly going unmeasured.
+          nix develop --command ./core-ops/coverage/refresh.sh
+          git diff --exit-code core-ops/COVERAGE.md core-ops/coverage/*.txt
+
+      - name: Run the quick profile against both pinned cores
+        run: ./core-ops/run.sh --profile quick --out "$GITHUB_WORKSPACE/core-ops-report" --cpus 2
+
+      - name: Require the run to have earned its comparison
+        run: |
+          set -euo pipefail
+          dir="$GITHUB_WORKSPACE/core-ops-report"
+          test -f "$dir/identity.json"
+          test -f "$dir/quick/report.json"
+          # Both cores identified, pin verified, nothing dirty.
+          jq -e '.pin_verified == true' "$dir/identity.json" > /dev/null
+          for core in go rust; do
+            jq -e --arg c "$core" '.cores[$c].revision | length == 40' "$dir/identity.json" > /dev/null
+            jq -e --arg c "$core" '.cores[$c].driver_sha256 | length == 64' "$dir/identity.json" > /dev/null
+            jq -e --arg c "$core" '.cores[$c].dirty == false' "$dir/identity.json" > /dev/null
+          done
+          jq -e '.cores.go.module_tree_vs_pinned_source | test("identical")' \
+            "$dir/identity.json" > /dev/null
+          # Every check passed on both sides, and the cross-core digests agree.
+          for core in go rust; do
+            failed=$(jq --arg c "$core" '[.checks[] | select(.passed == false)] | length' \
+              "$dir/quick/$core.json")
+            echo "$core: $failed failed checks"
+            test "$failed" -eq 0
+          done
+          jq -e '[.validity[] | select(startswith("all ") and endswith("identical"))] | length == 1' \
+            "$dir/quick/report.json" > /dev/null
+          # And the matrix's measured rows really were measured.
+          nix develop --command python3 core-ops/coverage/matrix.py check \
+            --report "$dir/quick/report.json"
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ops-quick-report
+          path: |
+            core-ops-report/identity.json
+            core-ops-report/quick/REPORT.md
+            core-ops-report/quick/*.json
+            core-ops-report/quick/*.csv
+          if-no-files-found: warn
+
   # The notebook has to keep working against the results committed here, and
   # it has to keep refusing to compare an invalid one.
   notebook:

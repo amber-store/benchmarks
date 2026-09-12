@@ -1,4 +1,6 @@
 /target/
+core-ops/rust/target/
+core-ops/coverage/goexports/target/
 /benchmark-results/
 /result
 /result-*

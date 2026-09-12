@@ -33,6 +33,24 @@ Measurements that have been recorded and committed live in
 **[`results/`](results/README.md)** — Markdown, static SVG charts and the
 JSON/CSV behind them, readable in a browser with nothing installed.
 
+### A second, separate benchmark: core operations
+
+This suite compares whole systems through their command lines. A different
+question — *how do the two Amber cores compare to each other, operation by
+operation?* — is answered by **[`core-ops/`](core-ops/README.md)**, which
+links both cores as libraries and measures 98 paired exported operations in
+process, with no command line inside any measured interval.
+
+```
+./core-ops/run.sh --profile standard
+```
+
+The two benchmarks share only the chart renderer, and their results live in
+different directories (`results/` and `core-ops-results/`). They are never
+mixed: a native library call and a CLI invocation are not the same
+measurement, and one table holding both would invite exactly the comparison
+that makes no sense.
+
 ---
 
 ## Contents
