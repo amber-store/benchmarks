@@ -1,0 +1,71 @@
+{
+  "categories": [
+    "16",
+    "256",
+    "4,096",
+    "40,000"
+  ],
+  "cells": [
+    [
+      {
+        "label": "2.018 us (1.899 us/op)",
+        "n": 1,
+        "value": 2017.625
+      },
+      {
+        "label": "616.8 ns (580.5 ns/op)",
+        "n": 1,
+        "value": 616.75
+      }
+    ],
+    [
+      {
+        "label": "771.4 ns (762.5 ns/op)",
+        "n": 1,
+        "value": 771.43359375
+      },
+      {
+        "label": "366.1 ns (361.8 ns/op)",
+        "n": 1,
+        "value": 366.08984375
+      }
+    ],
+    [
+      {
+        "label": "667.1 ns (662.9 ns/op)",
+        "n": 1,
+        "value": 667.087158203125
+      },
+      {
+        "label": "316.8 ns (314.8 ns/op)",
+        "n": 1,
+        "value": 316.823486328125
+      }
+    ],
+    [
+      {
+        "label": "745.7 ns (741.0 ns/op)",
+        "n": 1,
+        "value": 745.7476
+      },
+      {
+        "label": "274.0 ns (272.2 ns/op)",
+        "n": 1,
+        "value": 273.99892499999993
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Cost per unit of directory width: the whole measured call divided by that dimension's total over the call. Flat means proportional; falling means fixed overhead dominated the small end.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710. The bracketed figure is the batch-normalised latency of one operation."
+  ],
+  "title": "fstree.check_complete: scaling with directory width, plain content (quick profile)"
+}

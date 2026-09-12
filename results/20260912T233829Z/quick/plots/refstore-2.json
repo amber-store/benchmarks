@@ -1,0 +1,80 @@
+{
+  "categories": [
+    "wipe \u2014 records [1t]",
+    "close \u2014 populated [1t]",
+    "open \u2014 empty [1t]",
+    "open \u2014 populated-reopen [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 137022.0,
+        "label": "137.022 us",
+        "n": 1,
+        "value": 137022.0
+      },
+      {
+        "high": 354938.0,
+        "label": "354.938 us",
+        "n": 1,
+        "value": 354938.0
+      }
+    ],
+    [
+      {
+        "high": 143855.0,
+        "label": "143.855 us",
+        "n": 1,
+        "value": 143855.0
+      },
+      {
+        "high": 959332.0,
+        "label": "959.332 us",
+        "n": 1,
+        "value": 959332.0
+      }
+    ],
+    [
+      {
+        "high": 722390.0,
+        "label": "722.390 us",
+        "n": 1,
+        "value": 722390.0
+      },
+      {
+        "high": 1240851.0,
+        "label": "1.241 ms",
+        "n": 1,
+        "value": 1240851.0
+      }
+    ],
+    [
+      {
+        "high": 1040328.0,
+        "label": "1.040 ms",
+        "n": 1,
+        "value": 1040328.0
+      },
+      {
+        "high": 756205.0,
+        "label": "756.205 us",
+        "n": 1,
+        "value": 756205.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "refstore: time per operation (quick profile) \u2014 137.022 us to 1.241 ms, page 2 of 2"
+}

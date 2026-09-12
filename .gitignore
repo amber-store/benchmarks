@@ -1,0 +1,9 @@
+/target/
+core-ops/rust/target/
+core-ops/coverage/goexports/target/
+/result
+/result-*
+.direnv/
+__pycache__/
+*.py[cod]
+/core-ops/go/go

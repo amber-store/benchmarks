@@ -1,0 +1,125 @@
+{
+  "categories": [
+    "all \u2014 records [1t]",
+    "put_batch \u2014 records/sync-false [1t]",
+    "get \u2014 miss [1t]",
+    "put \u2014 records/sync-false [1t]",
+    "get \u2014 hit [1t]",
+    "delete \u2014 records [1t]",
+    "put \u2014 records/sync-true [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 128.08069999999998,
+        "label": "108.5 ns",
+        "n": 7,
+        "value": 108.4852
+      },
+      {
+        "high": 165.982,
+        "label": "161.5 ns",
+        "n": 7,
+        "value": 161.5106
+      }
+    ],
+    [
+      {
+        "high": 115.703,
+        "label": "115.6 ns",
+        "n": 7,
+        "value": 115.5788
+      },
+      {
+        "high": 906.4164000000001,
+        "label": "904.3 ns",
+        "n": 7,
+        "value": 904.2672
+      }
+    ],
+    [
+      {
+        "high": 229.804,
+        "label": "210.0 ns",
+        "n": 7,
+        "value": 209.991
+      },
+      {
+        "high": 347.331,
+        "label": "345.3 ns",
+        "n": 7,
+        "value": 345.2595
+      }
+    ],
+    [
+      {
+        "high": 480.1553,
+        "label": "476.6 ns",
+        "n": 7,
+        "value": 476.5704
+      },
+      {
+        "high": 43947.755000000005,
+        "label": "43.840 us",
+        "n": 7,
+        "value": 43839.8086
+      }
+    ],
+    [
+      {
+        "high": 1039.2002499999999,
+        "label": "1.026 us",
+        "n": 7,
+        "value": 1025.7095
+      },
+      {
+        "high": 563.30625,
+        "label": "559.4 ns",
+        "n": 7,
+        "value": 559.3935
+      }
+    ],
+    [
+      {
+        "high": 1751.591,
+        "label": "1.688 us",
+        "n": 7,
+        "value": 1687.7902
+      },
+      {
+        "high": 39767.528699999995,
+        "label": "39.647 us",
+        "n": 7,
+        "value": 39646.8954
+      }
+    ],
+    [
+      {
+        "high": 60313.4503,
+        "label": "60.238 us",
+        "n": 7,
+        "value": 60237.6854
+      },
+      {
+        "high": 44046.5728,
+        "label": "43.995 us",
+        "n": 7,
+        "value": 43995.316
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "refstore: time per operation (standard profile) \u2014 108.5 ns to 60.238 us, page 1 of 2"
+}

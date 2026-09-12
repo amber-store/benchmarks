@@ -1,0 +1,65 @@
+{
+  "categories": [
+    "prepare_ref \u2014 missing-root [8t]",
+    "open \u2014 populated [8t]",
+    "why \u2014 live-root [8t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 2730.609375,
+        "label": "2.523 us",
+        "n": 7,
+        "value": 2522.78125
+      },
+      {
+        "high": 171.6484375,
+        "label": "167.0 ns",
+        "n": 7,
+        "value": 167.046875
+      }
+    ],
+    [
+      {
+        "high": 46333.5,
+        "label": "44.555 us",
+        "n": 7,
+        "value": 44555.0
+      },
+      {
+        "high": 33859.5,
+        "label": "31.551 us",
+        "n": 7,
+        "value": 31551.0
+      }
+    ],
+    [
+      {
+        "high": 64774.0,
+        "label": "55.416 us",
+        "n": 7,
+        "value": 55416.0
+      },
+      {
+        "high": 6146.5,
+        "label": "5.731 us",
+        "n": 7,
+        "value": 5731.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "gc: time per operation (standard profile) \u2014 167.0 ns to 55.416 us, page 2 of 3"
+}

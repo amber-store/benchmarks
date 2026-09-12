@@ -1,0 +1,185 @@
+{
+  "categories": [
+    "scan \u2014 filtered/jobs-N [8t]",
+    "scan \u2014 unfiltered/jobs-1 [1t]",
+    "scan \u2014 filtered/jobs-1 [1t]",
+    "objects \u2014 tree/jobs-N [8t]",
+    "dir \u2014 tree/unchanged-repeat/jobs-N [8t]",
+    "dir \u2014 tree/incremental-change/jobs-N [8t]",
+    "dir \u2014 tree/fresh-store/jobs-N [8t]",
+    "dir \u2014 tree/incremental-change/jobs-1 [1t]",
+    "objects \u2014 tree/jobs-1 [1t]",
+    "dir \u2014 tree/unchanged-repeat/jobs-1 [1t]",
+    "dir \u2014 tree/fresh-store/jobs-1 [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 983.119763291377,
+        "label": "974.0 ns",
+        "n": 7,
+        "value": 973.9590456509487
+      },
+      {
+        "high": 5340.829889160248,
+        "label": "5.310 us",
+        "n": 7,
+        "value": 5309.776629720082
+      }
+    ],
+    [
+      {
+        "high": 1311.7224362502293,
+        "label": "1.311 us",
+        "n": 7,
+        "value": 1310.6307099614748
+      },
+      {
+        "high": 1585.1487800403595,
+        "label": "1.570 us",
+        "n": 7,
+        "value": 1570.122913226931
+      }
+    ],
+    [
+      {
+        "high": 2268.8136389254178,
+        "label": "2.240 us",
+        "n": 7,
+        "value": 2239.9618636107457
+      },
+      {
+        "high": 2697.352526770618,
+        "label": "2.645 us",
+        "n": 7,
+        "value": 2645.3445425511927
+      }
+    ],
+    [
+      {
+        "high": 88285.36708622957,
+        "label": "87.217 us",
+        "n": 7,
+        "value": 87217.47567161375
+      },
+      {
+        "high": 7238.523013338343,
+        "label": "7.152 us",
+        "n": 7,
+        "value": 7152.347736238963
+      }
+    ],
+    [
+      {
+        "high": 88489.55664099193,
+        "label": "87.694 us",
+        "n": 7,
+        "value": 87694.23821153484
+      },
+      {
+        "high": 7866.053823032125,
+        "label": "7.694 us",
+        "n": 7,
+        "value": 7693.520571106519
+      }
+    ],
+    [
+      {
+        "high": 89105.89645469893,
+        "label": "88.876 us",
+        "n": 7,
+        "value": 88875.9737385106
+      },
+      {
+        "high": 7572.50891014819,
+        "label": "7.443 us",
+        "n": 7,
+        "value": 7443.305008441193
+      }
+    ],
+    [
+      {
+        "high": 92282.28423821155,
+        "label": "91.535 us",
+        "n": 7,
+        "value": 91535.43208716888
+      },
+      {
+        "high": 10881.555795603983,
+        "label": "10.463 us",
+        "n": 7,
+        "value": 10463.337215855721
+      }
+    ],
+    [
+      {
+        "high": 93723.5553367098,
+        "label": "93.227 us",
+        "n": 7,
+        "value": 93226.60570249484
+      },
+      {
+        "high": 9930.257925342337,
+        "label": "9.885 us",
+        "n": 7,
+        "value": 9885.016882386044
+      }
+    ],
+    [
+      {
+        "high": 93822.18964869434,
+        "label": "93.455 us",
+        "n": 7,
+        "value": 93454.68307345481
+      },
+      {
+        "high": 9833.27399962427,
+        "label": "9.763 us",
+        "n": 7,
+        "value": 9763.458012399024
+      }
+    ],
+    [
+      {
+        "high": 93950.65273342101,
+        "label": "93.500 us",
+        "n": 7,
+        "value": 93499.84482434718
+      },
+      {
+        "high": 9806.58679316175,
+        "label": "9.760 us",
+        "n": 7,
+        "value": 9759.780199135826
+      }
+    ],
+    [
+      {
+        "high": 116847.89160247981,
+        "label": "115.712 us",
+        "n": 7,
+        "value": 115711.97670486568
+      },
+      {
+        "high": 20601.130377606612,
+        "label": "20.505 us",
+        "n": 7,
+        "value": 20505.45444298328
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "ingest: time per operation (standard profile) \u2014 974.0 ns to 115.712 us, page 1 of 2"
+}

@@ -1,0 +1,18 @@
+[package]
+name = "amber-core-ops-rs"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Native driver measuring the Rust Amber-Store core's exported operations in process"
+license = "LGPL-3.0-only"
+
+[dependencies]
+# The core under measurement, pinned to the same revision as the flake's
+# `amber-rust-src` input. core-ops/run.sh refuses to run if the two disagree.
+amber-store-core = { git = "https://github.com/amber-store/core-rs", rev = "141df2b0a9a8ad1726769f63811db3a166be188a" }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"

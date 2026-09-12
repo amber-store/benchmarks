@@ -1,0 +1,32 @@
+{
+  "schema": "amber-core-ops/identity/2",
+  "recorded_at": "2026-09-12T23:38:35Z",
+  "pin_verified": true,
+  "flake_lock": { "amber_go_src": "4ed4660657b12421a534ab0b08cfd717ae3d2291", "amber_rust_src": "141df2b0a9a8ad1726769f63811db3a166be188a" },
+  "harness": {
+    "revision": "40ac759a5b23035e213e5434deaa8be5041d3bea",
+    "dirty": false,
+    "sources_sha256": "9b8c3e8623b8dc96b0657237f4c0940d1d78ea6d35e9ec16602256fbea8756f3"
+  },
+  "cores": {
+    "go": {
+      "source": "pinned", "revision": "4ed4660657b12421a534ab0b08cfd717ae3d2291", "dirty": false,
+      "module": "github.com/amber-store/core",
+      "module_tree_vs_pinned_source": "identical",
+      "driver": "/var/tmp/amber-core-final/repo/target/core-ops/amber-core-ops-go", "driver_sha256": "dcfde5bf73dc09ce186379f0395214385bfb092f3eee60abe584155bd5ed0efb"
+    },
+    "rust": {
+      "source": "pinned", "revision": "141df2b0a9a8ad1726769f63811db3a166be188a", "dirty": false,
+      "module": "amber-store-core",
+      "cargo_lock_requested_rev": "141df2b0a9a8ad1726769f63811db3a166be188a",
+      "cargo_lock_resolved_rev": "141df2b0a9a8ad1726769f63811db3a166be188a",
+      "cargo_resolved_source": "git+https://github.com/amber-store/core-rs?rev=141df2b0a9a8ad1726769f63811db3a166be188a#141df2b0a9a8ad1726769f63811db3a166be188a",
+      "driver": "/var/tmp/amber-core-final/repo/target/core-ops/amber-core-ops-rs", "driver_sha256": "a6076fc943b3f007b008a178e7ad0769f657c05ce11635975638158fe9bcae47"
+    }
+  },
+  "environment": {
+    "host": "bld1", "kernel": "Linux 6.18.45", "cpu_model": "AMD Ryzen 9 7950X3D 16-Core Processor",
+    "cpu_count": 32, "cpu_set": "0-7", "mem_total_kb": 131404168,
+    "scratch": "/var/tmp/amber-core-ops/run-20260912T233829Z-2511764", "scratch_fs": "ext4"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "categories": [
+    "split_bytes \u2014 random/default-sizes [1t]",
+    "split_bytes \u2014 tiny-64KiB/default-sizes [1t]",
+    "split_bytes \u2014 compressible/4-16-64KiB [1t]",
+    "split_bytes \u2014 compressible/default-sizes [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 49644.128830874004,
+        "label": "49.214 us",
+        "n": 7,
+        "value": 49214.239500567535
+      },
+      {
+        "high": 44723.79909194098,
+        "label": "44.529 us",
+        "n": 7,
+        "value": 44528.750283768444
+      }
+    ],
+    [
+      {
+        "high": 52004.5,
+        "label": "49.905 us",
+        "n": 7,
+        "value": 49905.0
+      },
+      {
+        "high": 22202.5,
+        "label": "22.133 us",
+        "n": 7,
+        "value": 22133.0
+      }
+    ],
+    [
+      {
+        "high": 56389.2177734375,
+        "label": "56.309 us",
+        "n": 7,
+        "value": 56308.587890625
+      },
+      {
+        "high": 40447.435546875,
+        "label": "40.272 us",
+        "n": 7,
+        "value": 40272.02734375
+      }
+    ],
+    [
+      {
+        "high": 900141.8515625,
+        "label": "897.013 us",
+        "n": 7,
+        "value": 897013.21875
+      },
+      {
+        "high": 660605.125,
+        "label": "660.511 us",
+        "n": 7,
+        "value": 660510.65625
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "chunkers: time per operation (standard profile) \u2014 22.133 us to 897.013 us, page 2 of 2"
+}

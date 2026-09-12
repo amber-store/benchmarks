@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Formatting, lints and the report's own tests: the statistics, and a test
+  # for every refusal the validity gate is supposed to make.
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Both drivers are formatted and lint clean
+        run: |
+          set -euo pipefail
+          nix develop --command bash -c 'cd core-ops/go && gofmt -l . | tee /tmp/gofmt.out && test ! -s /tmp/gofmt.out'
+          nix develop --command bash -c 'cd core-ops/go && go vet ./...'
+          nix develop --command bash -c 'cd core-ops/coverage/goexports && gofmt -l . | tee /tmp/gofmt2.out && test ! -s /tmp/gofmt2.out'
+          nix develop --command bash -c 'cd core-ops/rust && cargo fmt --check'
+          nix develop --command bash -c 'cd core-ops/rust && cargo clippy --locked --all-targets'
+
+      - name: The report's own tests
+        run: nix develop --command python3 -m unittest discover -s core-ops/report
+
+  # The real gate: both native drivers built from the revisions this
+  # repository's flake pins, the whole correctness suite, and a report that
+  # had to earn its comparison. Timings from a shared runner are not
+  # comparable between runs, so this is a correctness job — it runs the
+  # `quick` profile, which exists for exactly that.
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run the quick profile against both pinned cores
+        run: ./run.sh --profile quick --out "$GITHUB_WORKSPACE/core-ops-report" --cpus 2
+
+      - name: The coverage matrix covers both cores' whole exported surface
+        run: |
+          set -euo pipefail
+          # Re-extract from the pinned sources, so a core bump that adds an
+          # export fails here rather than quietly going unmeasured. The
+          # workload lists are generated too, so a workload that appeared or
+          # disappeared without being written down shows up as a diff.
+          nix develop --command ./core-ops/coverage/refresh.sh
+          git diff --exit-code core-ops/COVERAGE.md core-ops/coverage/*.txt
+          nix develop --command python3 core-ops/coverage/matrix.py check \
+            --report "$GITHUB_WORKSPACE/core-ops-report/quick/report.json"
+
+      - name: Require the run to have earned its comparison
+        run: |
+          set -euo pipefail
+          dir="$GITHUB_WORKSPACE/core-ops-report"
+          test -f "$dir/identity.json"
+          test -f "$dir/quick/report.json"
+          # Both cores identified, pin verified, nothing dirty.
+          jq -e '.pin_verified == true' "$dir/identity.json" > /dev/null
+          for core in go rust; do
+            jq -e --arg c "$core" '.cores[$c].revision | length == 40' "$dir/identity.json" > /dev/null
+            jq -e --arg c "$core" '.cores[$c].driver_sha256 | length == 64' "$dir/identity.json" > /dev/null
+            jq -e --arg c "$core" '.cores[$c].dirty == false' "$dir/identity.json" > /dev/null
+          done
+          # Every build-relevant file of the Go module matched the pinned
+          # commit, and cargo really resolved the pinned Rust commit.
+          jq -e '.cores.go.module_tree_vs_pinned_source == "identical"' \
+            "$dir/identity.json" > /dev/null
+          jq -e '.cores.rust.cargo_lock_requested_rev == .cores.rust.cargo_lock_resolved_rev' \
+            "$dir/identity.json" > /dev/null
+          rust_pin=$(jq -r .flake_lock.amber_rust_src "$dir/identity.json")
+          jq -e --arg rev "$rust_pin" \
+            '.cores.rust.cargo_resolved_source | contains($rev)' \
+            "$dir/identity.json" > /dev/null
+          # Every check passed on both sides.
+          for core in go rust; do
+            failed=$(jq '[.checks[] | select(.passed == false)] | length' \
+              "$dir/quick/$core-pass1.json")
+            echo "$core: $failed failed checks"
+            test "$failed" -eq 0
+          done
+          # And the statements the report rests on are the ones it should be.
+          for want in "cross-core output digests are identical" \
+                      "byte-identical output in all" \
+                      "decoded the same bytes" \
+                      "exactly the manifest"; do
+            jq -e --arg w "$want" '[.validity[] | select(contains($w))] | length >= 1' \
+              "$dir/quick/report.json" > /dev/null \
+              || { echo "the report does not claim: $want"; exit 1; }
+          done
+
+      - name: The gate refuses a run that breaks one thing
+        run: |
+          set -euo pipefail
+          nix develop --command python3 core-ops/report/probe.py \
+            "$GITHUB_WORKSPACE/core-ops-report/quick"
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ops-quick-report
+          path: |
+            core-ops-report/identity.json
+            core-ops-report/quick/REPORT.md
+            core-ops-report/quick/*.json
+            core-ops-report/quick/*.csv
+          if-no-files-found: warn

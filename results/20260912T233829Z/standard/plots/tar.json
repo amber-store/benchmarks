@@ -1,0 +1,49 @@
+{
+  "categories": [
+    "write \u2014 fixture-tree [1t]",
+    "extract \u2014 fixture-tree [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 2360.7071200450873,
+        "label": "2.357 us",
+        "n": 7,
+        "value": 2357.4414803682134
+      },
+      {
+        "high": 2280.9145218861545,
+        "label": "2.267 us",
+        "n": 7,
+        "value": 2266.825098628593
+      }
+    ],
+    [
+      {
+        "high": 41972.1472853654,
+        "label": "39.363 us",
+        "n": 7,
+        "value": 39362.652827353
+      },
+      {
+        "high": 32362.98600413301,
+        "label": "32.264 us",
+        "n": 7,
+        "value": 32263.743377794475
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 7 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "tar: time per operation (standard profile)"
+}

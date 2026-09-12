@@ -1,0 +1,94 @@
+{
+  "categories": [
+    "validate_name \u2014 valid [1t]",
+    "validate_user \u2014 valid [1t]",
+    "signature_payload \u2014 signed [1t]",
+    "encode \u2014 signed [1t]",
+    "decode \u2014 signed [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 66.53125,
+        "label": "66.5 ns",
+        "n": 1,
+        "value": 66.53125
+      },
+      {
+        "high": 33.30859375,
+        "label": "33.3 ns",
+        "n": 1,
+        "value": 33.30859375
+      }
+    ],
+    [
+      {
+        "high": 71.54296875,
+        "label": "71.5 ns",
+        "n": 1,
+        "value": 71.54296875
+      },
+      {
+        "high": 96.7109375,
+        "label": "96.7 ns",
+        "n": 1,
+        "value": 96.7109375
+      }
+    ],
+    [
+      {
+        "high": 249.69921875,
+        "label": "249.7 ns",
+        "n": 1,
+        "value": 249.69921875
+      },
+      {
+        "high": 166.5703125,
+        "label": "166.6 ns",
+        "n": 1,
+        "value": 166.5703125
+      }
+    ],
+    [
+      {
+        "high": 253.5703125,
+        "label": "253.6 ns",
+        "n": 1,
+        "value": 253.5703125
+      },
+      {
+        "high": 171.7734375,
+        "label": "171.8 ns",
+        "n": 1,
+        "value": 171.7734375
+      }
+    ],
+    [
+      {
+        "high": 862.625,
+        "label": "862.6 ns",
+        "n": 1,
+        "value": 862.625
+      },
+      {
+        "high": 441.78125,
+        "label": "441.8 ns",
+        "n": 1,
+        "value": 441.78125
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "reference: time per operation (quick profile)"
+}

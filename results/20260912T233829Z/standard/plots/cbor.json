@@ -1,0 +1,79 @@
+{
+  "categories": [
+    "decode_xattrs \u2014 xattrs-3 [1t]",
+    "encode_xattrs \u2014 xattrs-3 [1t]",
+    "decode_xattrs \u2014 xattrs-64 [1t]",
+    "encode_xattrs \u2014 xattrs-64 [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 421.5859375,
+        "label": "409.8 ns",
+        "n": 7,
+        "value": 409.84375
+      },
+      {
+        "high": 174.703125,
+        "label": "173.3 ns",
+        "n": 7,
+        "value": 173.296875
+      }
+    ],
+    [
+      {
+        "high": 452.3515625,
+        "label": "444.3 ns",
+        "n": 7,
+        "value": 444.28125
+      },
+      {
+        "high": 256.1953125,
+        "label": "252.5 ns",
+        "n": 7,
+        "value": 252.5
+      }
+    ],
+    [
+      {
+        "high": 9016.6015625,
+        "label": "8.915 us",
+        "n": 7,
+        "value": 8915.3125
+      },
+      {
+        "high": 5624.265625,
+        "label": "5.565 us",
+        "n": 7,
+        "value": 5564.84375
+      }
+    ],
+    [
+      {
+        "high": 25607.75,
+        "label": "25.173 us",
+        "n": 7,
+        "value": 25172.609375
+      },
+      {
+        "high": 4539.0625,
+        "label": "4.513 us",
+        "n": 7,
+        "value": 4513.46875
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 7 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "cbor: time per operation (standard profile)"
+}

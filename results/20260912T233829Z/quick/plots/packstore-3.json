@@ -1,0 +1,155 @@
+{
+  "categories": [
+    "open \u2014 populated-reopen [1t]",
+    "wipe \u2014 populated [1t]",
+    "close \u2014 populated [1t]",
+    "put \u2014 1MiB-duplicate/sync-off [1t]",
+    "put \u2014 1MiB-random/sync-off [1t]",
+    "put \u2014 1MiB-text/sync-off [1t]",
+    "put \u2014 large-8MiB-duplicate/sync-off [1t]",
+    "put \u2014 large-8MiB-random/sync-off [1t]",
+    "put \u2014 large-8MiB-text/sync-off [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 209510.0,
+        "label": "209.510 us",
+        "n": 1,
+        "value": 209510.0
+      },
+      {
+        "high": 253104.0,
+        "label": "253.104 us",
+        "n": 1,
+        "value": 253104.0
+      }
+    ],
+    [
+      {
+        "high": 245238.0,
+        "label": "245.238 us",
+        "n": 1,
+        "value": 245238.0
+      },
+      {
+        "high": 225431.0,
+        "label": "225.431 us",
+        "n": 1,
+        "value": 225431.0
+      }
+    ],
+    [
+      {
+        "high": 368484.0,
+        "label": "368.484 us",
+        "n": 1,
+        "value": 368484.0
+      },
+      {
+        "high": 252442.0,
+        "label": "252.442 us",
+        "n": 1,
+        "value": 252442.0
+      }
+    ],
+    [
+      {
+        "high": 723622.5,
+        "label": "723.622 us",
+        "n": 1,
+        "value": 723622.5
+      },
+      {
+        "high": 275411.5,
+        "label": "275.411 us",
+        "n": 1,
+        "value": 275411.5
+      }
+    ],
+    [
+      {
+        "high": 1079562.0,
+        "label": "1.080 ms",
+        "n": 1,
+        "value": 1079562.0
+      },
+      {
+        "high": 513962.0,
+        "label": "513.962 us",
+        "n": 1,
+        "value": 513962.0
+      }
+    ],
+    [
+      {
+        "high": 4006864.0,
+        "label": "4.007 ms",
+        "n": 1,
+        "value": 4006864.0
+      },
+      {
+        "high": 1963571.0,
+        "label": "1.964 ms",
+        "n": 1,
+        "value": 1963571.0
+      }
+    ],
+    [
+      {
+        "high": 8598255.0,
+        "label": "8.598 ms",
+        "n": 1,
+        "value": 8598255.0
+      },
+      {
+        "high": 2604475.0,
+        "label": "2.604 ms",
+        "n": 1,
+        "value": 2604475.0
+      }
+    ],
+    [
+      {
+        "high": 8767819.0,
+        "label": "8.768 ms",
+        "n": 1,
+        "value": 8767819.0
+      },
+      {
+        "high": 6964594.0,
+        "label": "6.965 ms",
+        "n": 1,
+        "value": 6964594.0
+      }
+    ],
+    [
+      {
+        "high": 26966133.0,
+        "label": "26.966 ms",
+        "n": 1,
+        "value": 26966133.0
+      },
+      {
+        "high": 14796425.0,
+        "label": "14.796 ms",
+        "n": 1,
+        "value": 14796425.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "packstore: time per operation (quick profile) \u2014 209.510 us to 26.966 ms, page 3 of 3"
+}

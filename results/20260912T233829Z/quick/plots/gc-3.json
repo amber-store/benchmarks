@@ -1,0 +1,95 @@
+{
+  "categories": [
+    "prepare_ref \u2014 tree-root/commit [4t]",
+    "status \u2014 mark+score [4t]",
+    "prepare_ref \u2014 tree-root/abort [4t]",
+    "wipe \u2014 store-reset [4t]",
+    "run \u2014 reclaimable-packs [4t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 343696.0,
+        "label": "343.696 us",
+        "n": 1,
+        "value": 343696.0
+      },
+      {
+        "high": 375056.0,
+        "label": "375.056 us",
+        "n": 1,
+        "value": 375056.0
+      }
+    ],
+    [
+      {
+        "high": 352944.0,
+        "label": "352.944 us",
+        "n": 1,
+        "value": 352944.0
+      },
+      {
+        "high": 214660.0,
+        "label": "214.660 us",
+        "n": 1,
+        "value": 214660.0
+      }
+    ],
+    [
+      {
+        "high": 423248.0,
+        "label": "423.248 us",
+        "n": 1,
+        "value": 423248.0
+      },
+      {
+        "high": 420513.0,
+        "label": "420.513 us",
+        "n": 1,
+        "value": 420513.0
+      }
+    ],
+    [
+      {
+        "high": 463165.0,
+        "label": "463.165 us",
+        "n": 1,
+        "value": 463165.0
+      },
+      {
+        "high": 430993.0,
+        "label": "430.993 us",
+        "n": 1,
+        "value": 430993.0
+      }
+    ],
+    [
+      {
+        "high": 1002686.0,
+        "label": "1.003 ms",
+        "n": 1,
+        "value": 1002686.0
+      },
+      {
+        "high": 1013266.0,
+        "label": "1.013 ms",
+        "n": 1,
+        "value": 1013266.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "gc: time per operation (quick profile) \u2014 214.660 us to 1.013 ms, page 3 of 3"
+}

@@ -1,0 +1,155 @@
+{
+  "categories": [
+    "writer_add \u2014 mixed-objects [1t]",
+    "encode_record \u2014 1MiB-random [1t]",
+    "reader_all \u2014 truncated-stream/producer-rust [1t]",
+    "encode_record \u2014 1MiB-duplicate [1t]",
+    "reader_all \u2014 truncated-stream/producer-go [1t]",
+    "encode_record \u2014 1MiB-text [1t]",
+    "encode_record \u2014 large-8MiB-random [1t]",
+    "encode_record \u2014 large-8MiB-duplicate [1t]",
+    "encode_record \u2014 large-8MiB-text [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 92971.5,
+        "label": "92.972 us",
+        "n": 1,
+        "value": 92971.5
+      },
+      {
+        "high": 40903.921875,
+        "label": "40.904 us",
+        "n": 1,
+        "value": 40903.921875
+      }
+    ],
+    [
+      {
+        "high": 517950.0,
+        "label": "517.950 us",
+        "n": 1,
+        "value": 517950.0
+      },
+      {
+        "high": 278252.0,
+        "label": "278.252 us",
+        "n": 1,
+        "value": 278252.0
+      }
+    ],
+    [
+      {
+        "high": 551543.125,
+        "label": "551.543 us",
+        "n": 1,
+        "value": 551543.125
+      },
+      {
+        "high": 402468.046875,
+        "label": "402.468 us",
+        "n": 1,
+        "value": 402468.046875
+      }
+    ],
+    [
+      {
+        "high": 603873.5,
+        "label": "603.874 us",
+        "n": 1,
+        "value": 603873.5
+      },
+      {
+        "high": 285535.5,
+        "label": "285.536 us",
+        "n": 1,
+        "value": 285535.5
+      }
+    ],
+    [
+      {
+        "high": 968749.5,
+        "label": "968.750 us",
+        "n": 1,
+        "value": 968749.5
+      },
+      {
+        "high": 426292.625,
+        "label": "426.293 us",
+        "n": 1,
+        "value": 426292.625
+      }
+    ],
+    [
+      {
+        "high": 3911182.0,
+        "label": "3.911 ms",
+        "n": 1,
+        "value": 3911182.0
+      },
+      {
+        "high": 1803936.0,
+        "label": "1.804 ms",
+        "n": 1,
+        "value": 1803936.0
+      }
+    ],
+    [
+      {
+        "high": 6098109.0,
+        "label": "6.098 ms",
+        "n": 1,
+        "value": 6098109.0
+      },
+      {
+        "high": 6229390.0,
+        "label": "6.229 ms",
+        "n": 1,
+        "value": 6229390.0
+      }
+    ],
+    [
+      {
+        "high": 14041824.0,
+        "label": "14.042 ms",
+        "n": 1,
+        "value": 14041824.0
+      },
+      {
+        "high": 5106434.5,
+        "label": "5.106 ms",
+        "n": 1,
+        "value": 5106434.5
+      }
+    ],
+    [
+      {
+        "high": 26298307.0,
+        "label": "26.298 ms",
+        "n": 1,
+        "value": 26298307.0
+      },
+      {
+        "high": 14160049.0,
+        "label": "14.160 ms",
+        "n": 1,
+        "value": 14160049.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "amberpack: time per operation (quick profile) \u2014 40.904 us to 26.298 ms, page 2 of 2"
+}

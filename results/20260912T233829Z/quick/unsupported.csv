@@ -1,0 +1,11 @@
+core,op,workload,reason
+go,cbor.head_primitives,,Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public
+go,cbor.append_head,,Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public
+go,cbor.read_head,,Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public
+go,cbor.append_bstr,,Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public
+go,cbor.read_bstr,,Go keeps the CBOR head/byte-string primitives unexported inside package cborx; only EncodeXattrs/DecodeXattrs are public
+go,binaryfuse.new,,"the Go core builds its pack filters with github.com/FastFilter/xorfilter, an external dependency; it exports no binaryfuse package of its own"
+go,binaryfuse.contains,,"the Go core builds its pack filters with github.com/FastFilter/xorfilter, an external dependency; it exports no binaryfuse package of its own"
+go,binaryfuse.section_bytes,,the Go core keeps filter-section serialization unexported inside packstore
+go,binaryfuse.parse_section,,the Go core keeps filter-section parsing unexported inside packstore
+rust,gc.begin_write,gate-span,the Rust core keeps the write gate internal: packstore::Store::begin_write is pub(super) and the collector exports no BeginWrite

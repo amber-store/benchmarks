@@ -1,0 +1,71 @@
+{
+  "categories": [
+    "64",
+    "4,096",
+    "1,048,576",
+    "8,388,608"
+  ],
+  "cells": [
+    [
+      {
+        "label": "18.0 ns (1.152 us/op)",
+        "n": 1,
+        "value": 18.002184867858887
+      },
+      {
+        "label": "18.3 ns (1.172 us/op)",
+        "n": 1,
+        "value": 18.31690788269043
+      }
+    ],
+    [
+      {
+        "label": "6.6 ns (27.117 us/op)",
+        "n": 1,
+        "value": 6.620455741882324
+      },
+      {
+        "label": "3.3 ns (13.649 us/op)",
+        "n": 1,
+        "value": 3.332390785217285
+      }
+    ],
+    [
+      {
+        "label": "3.7 ns (3.911 ms/op)",
+        "n": 1,
+        "value": 3.7299938201904297
+      },
+      {
+        "label": "1.7 ns (1.804 ms/op)",
+        "n": 1,
+        "value": 1.720367431640625
+      }
+    ],
+    [
+      {
+        "label": "3.1 ns (26.298 ms/op)",
+        "n": 1,
+        "value": 3.1350024938583374
+      },
+      {
+        "label": "1.7 ns (14.160 ms/op)",
+        "n": 1,
+        "value": 1.6880093812942505
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Cost per unit of object size (bytes): the whole measured call divided by that dimension's total over the call. Flat means proportional; falling means fixed overhead dominated the small end.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710. The bracketed figure is the batch-normalised latency of one operation."
+  ],
+  "title": "amberpack.encode_record: scaling with object size (bytes), text content (quick profile)"
+}

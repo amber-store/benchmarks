@@ -1,0 +1,110 @@
+{
+  "categories": [
+    "new \u2014 4KiB-duplicate [1t]",
+    "new \u2014 4KiB-random [1t]",
+    "new \u2014 4KiB-text [1t]",
+    "new \u2014 1MiB-duplicate [1t]",
+    "new \u2014 1MiB-text [1t]",
+    "new \u2014 1MiB-random [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 1781.33203125,
+        "label": "1.781 us",
+        "n": 1,
+        "value": 1781.33203125
+      },
+      {
+        "high": 1328.671875,
+        "label": "1.329 us",
+        "n": 1,
+        "value": 1328.671875
+      }
+    ],
+    [
+      {
+        "high": 1889.5078125,
+        "label": "1.890 us",
+        "n": 1,
+        "value": 1889.5078125
+      },
+      {
+        "high": 1330.078125,
+        "label": "1.330 us",
+        "n": 1,
+        "value": 1330.078125
+      }
+    ],
+    [
+      {
+        "high": 2087.07421875,
+        "label": "2.087 us",
+        "n": 1,
+        "value": 2087.07421875
+      },
+      {
+        "high": 1318.84765625,
+        "label": "1.319 us",
+        "n": 1,
+        "value": 1318.84765625
+      }
+    ],
+    [
+      {
+        "high": 219594.5,
+        "label": "219.595 us",
+        "n": 1,
+        "value": 219594.5
+      },
+      {
+        "high": 175289.5,
+        "label": "175.290 us",
+        "n": 1,
+        "value": 175289.5
+      }
+    ],
+    [
+      {
+        "high": 249617.0,
+        "label": "249.617 us",
+        "n": 1,
+        "value": 249617.0
+      },
+      {
+        "high": 172810.0,
+        "label": "172.810 us",
+        "n": 1,
+        "value": 172810.0
+      }
+    ],
+    [
+      {
+        "high": 257923.0,
+        "label": "257.923 us",
+        "n": 1,
+        "value": 257923.0
+      },
+      {
+        "high": 171778.0,
+        "label": "171.778 us",
+        "n": 1,
+        "value": 171778.0
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "key: time per operation (quick profile) \u2014 1.319 us to 257.923 us, page 2 of 3"
+}

@@ -1,0 +1,320 @@
+{
+  "categories": [
+    "encode_blob \u2014 4KiB-random [1t]",
+    "encode_blob \u2014 4KiB-text [1t]",
+    "dir_builder \u2014 entries-16 [1t]",
+    "resolve_path \u2014 depth-4 [1t]",
+    "lookup_entry \u2014 width-4096/miss [1t]",
+    "reachable_keys \u2014 file-corpus [auto]",
+    "lookup_entry \u2014 width-16/hit [1t]",
+    "lookup_entry \u2014 width-16/miss [1t]",
+    "reachable_keys \u2014 deep [auto]",
+    "resolve_entry \u2014 depth-1 [1t]",
+    "resolve_entry \u2014 depth-4 [1t]",
+    "resolve_path \u2014 depth-12 [1t]",
+    "resolve_entry \u2014 depth-12 [1t]",
+    "resolve_path \u2014 depth-24 [1t]",
+    "child_keys \u2014 dir-node-128 [1t]",
+    "resolve_entry \u2014 depth-24 [1t]",
+    "lookup_entry \u2014 width-256/hit [1t]",
+    "child_keys \u2014 dir-leaf-128 [1t]",
+    "check_complete \u2014 incomplete/jobs-1 [1t]",
+    "child_keys \u2014 file-node-1024 [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 1959.25,
+        "label": "1.959 us",
+        "n": 1,
+        "value": 1959.25
+      },
+      {
+        "high": 1137.328125,
+        "label": "1.137 us",
+        "n": 1,
+        "value": 1137.328125
+      }
+    ],
+    [
+      {
+        "high": 2129.76953125,
+        "label": "2.130 us",
+        "n": 1,
+        "value": 2129.76953125
+      },
+      {
+        "high": 1150.1640625,
+        "label": "1.150 us",
+        "n": 1,
+        "value": 1150.1640625
+      }
+    ],
+    [
+      {
+        "high": 2263.6875,
+        "label": "2.264 us",
+        "n": 1,
+        "value": 2263.6875
+      },
+      {
+        "high": 557.9375,
+        "label": "557.9 ns",
+        "n": 1,
+        "value": 557.9375
+      }
+    ],
+    [
+      {
+        "high": 3445.41015625,
+        "label": "3.445 us",
+        "n": 1,
+        "value": 3445.41015625
+      },
+      {
+        "high": 1818.39453125,
+        "label": "1.818 us",
+        "n": 1,
+        "value": 1818.39453125
+      }
+    ],
+    [
+      {
+        "high": 3735.99,
+        "label": "3.736 us",
+        "n": 1,
+        "value": 3735.99
+      },
+      {
+        "high": 2028.075,
+        "label": "2.028 us",
+        "n": 1,
+        "value": 2028.075
+      }
+    ],
+    [
+      {
+        "high": 3872.5,
+        "label": "3.873 us",
+        "n": 1,
+        "value": 3872.5
+      },
+      {
+        "high": 21057.75,
+        "label": "21.058 us",
+        "n": 1,
+        "value": 21057.75
+      }
+    ],
+    [
+      {
+        "high": 5150.49,
+        "label": "5.150 us",
+        "n": 1,
+        "value": 5150.49
+      },
+      {
+        "high": 2908.555,
+        "label": "2.909 us",
+        "n": 1,
+        "value": 2908.555
+      }
+    ],
+    [
+      {
+        "high": 5566.935,
+        "label": "5.567 us",
+        "n": 1,
+        "value": 5566.935
+      },
+      {
+        "high": 2909.005,
+        "label": "2.909 us",
+        "n": 1,
+        "value": 2909.005
+      }
+    ],
+    [
+      {
+        "high": 5855.791666666667,
+        "label": "5.856 us",
+        "n": 1,
+        "value": 5855.791666666667
+      },
+      {
+        "high": 43238.416666666664,
+        "label": "43.238 us",
+        "n": 1,
+        "value": 43238.416666666664
+      }
+    ],
+    [
+      {
+        "high": 6068.34765625,
+        "label": "6.068 us",
+        "n": 1,
+        "value": 6068.34765625
+      },
+      {
+        "high": 3389.6796875,
+        "label": "3.390 us",
+        "n": 1,
+        "value": 3389.6796875
+      }
+    ],
+    [
+      {
+        "high": 8793.0859375,
+        "label": "8.793 us",
+        "n": 1,
+        "value": 8793.0859375
+      },
+      {
+        "high": 4663.20703125,
+        "label": "4.663 us",
+        "n": 1,
+        "value": 4663.20703125
+      }
+    ],
+    [
+      {
+        "high": 10382.68359375,
+        "label": "10.383 us",
+        "n": 1,
+        "value": 10382.68359375
+      },
+      {
+        "high": 5248.69921875,
+        "label": "5.249 us",
+        "n": 1,
+        "value": 5248.69921875
+      }
+    ],
+    [
+      {
+        "high": 15842.17578125,
+        "label": "15.842 us",
+        "n": 1,
+        "value": 15842.17578125
+      },
+      {
+        "high": 8207.828125,
+        "label": "8.208 us",
+        "n": 1,
+        "value": 8207.828125
+      }
+    ],
+    [
+      {
+        "high": 20648.703125,
+        "label": "20.649 us",
+        "n": 1,
+        "value": 20648.703125
+      },
+      {
+        "high": 10566.7890625,
+        "label": "10.567 us",
+        "n": 1,
+        "value": 10566.7890625
+      }
+    ],
+    [
+      {
+        "high": 21532.859375,
+        "label": "21.533 us",
+        "n": 1,
+        "value": 21532.859375
+      },
+      {
+        "high": 14652.203125,
+        "label": "14.652 us",
+        "n": 1,
+        "value": 14652.203125
+      }
+    ],
+    [
+      {
+        "high": 26880.09765625,
+        "label": "26.880 us",
+        "n": 1,
+        "value": 26880.09765625
+      },
+      {
+        "high": 13563.91796875,
+        "label": "13.564 us",
+        "n": 1,
+        "value": 13563.91796875
+      }
+    ],
+    [
+      {
+        "high": 40845.925,
+        "label": "40.846 us",
+        "n": 1,
+        "value": 40845.925
+      },
+      {
+        "high": 25566.54,
+        "label": "25.567 us",
+        "n": 1,
+        "value": 25566.54
+      }
+    ],
+    [
+      {
+        "high": 47398.515625,
+        "label": "47.399 us",
+        "n": 1,
+        "value": 47398.515625
+      },
+      {
+        "high": 29508.40625,
+        "label": "29.508 us",
+        "n": 1,
+        "value": 29508.40625
+      }
+    ],
+    [
+      {
+        "high": 52320.0,
+        "label": "52.320 us",
+        "n": 1,
+        "value": 52320.0
+      },
+      {
+        "high": 15129.0,
+        "label": "15.129 us",
+        "n": 1,
+        "value": 15129.0
+      }
+    ],
+    [
+      {
+        "high": 86016.65625,
+        "label": "86.017 us",
+        "n": 1,
+        "value": 86016.65625
+      },
+      {
+        "high": 72422.71875,
+        "label": "72.423 us",
+        "n": 1,
+        "value": 72422.71875
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 1 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "fstree: time per operation (quick profile) \u2014 557.9 ns to 86.017 us, page 4 of 5"
+}

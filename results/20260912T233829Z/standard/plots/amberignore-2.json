@@ -1,0 +1,65 @@
+{
+  "categories": [
+    "ignored \u2014 mixed-names [1t]",
+    "descend \u2014 8-subdirs [1t]",
+    "root \u2014 load-root [1t]"
+  ],
+  "cells": [
+    [
+      {
+        "high": 214.1982421875,
+        "label": "210.8 ns",
+        "n": 7,
+        "value": 210.822265625
+      },
+      {
+        "high": 119.35400390625,
+        "label": "118.5 ns",
+        "n": 7,
+        "value": 118.517578125
+      }
+    ],
+    [
+      {
+        "high": 5198.26953125,
+        "label": "5.091 us",
+        "n": 7,
+        "value": 5091.091796875
+      },
+      {
+        "high": 3165.2158203125,
+        "label": "3.156 us",
+        "n": 7,
+        "value": 3155.873046875
+      }
+    ],
+    [
+      {
+        "high": 7405.625,
+        "label": "7.317 us",
+        "n": 7,
+        "value": 7317.265625
+      },
+      {
+        "high": 4285.6875,
+        "label": "4.282 us",
+        "n": 7,
+        "value": 4281.921875
+      }
+    ]
+  ],
+  "footer": [
+    "No overall ranking is implied: the two cores trade differently across the operation set, and these bars are per operation only.",
+    "AMD Ryzen 9 7950X3D 16-Core Processor, CPUs 0-7, 7 repetitions, warm caches.",
+    "The bars share one linear axis, so a page only holds operations within about three decades of one another; the rest of the group is on another page."
+  ],
+  "series": [
+    "Go core",
+    "Rust core"
+  ],
+  "subtitle": [
+    "Median of the per-repetition values, bar tip to the 75th percentile; lower is faster. Native library calls, measured in process.",
+    "Go 4ed4660657b1 vs Rust 141df2b0a9a8, seed 1592639710."
+  ],
+  "title": "amberignore: time per operation (standard profile) \u2014 118.5 ns to 7.317 us, page 2 of 2"
+}
